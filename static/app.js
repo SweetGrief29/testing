@@ -5,7 +5,8 @@ let TOKENS = [];
 const CHAIN_SPECS = {
   evm: ["eth", "polygon", "base"],
   solana: ["sol"],
-  svm: ["svm"],
+  // Disable specific for SVM: empty list
+  svm: [],
 };
 
 // ===== Trade History Pagination =====
@@ -26,11 +27,13 @@ function setSpecificOptions(selectEl, chain) {
 }
 
 function tokenOptionsFor(chain, specific) {
-  const list = (TOKENS || []).filter(
-    (t) =>
-      String(t.chain || "") === String(chain || "") &&
-      String(t.specificChain || "") === String(specific || "")
-  );
+  const hasSpecifics = (CHAIN_SPECS[chain] || []).length > 0;
+  const list = (TOKENS || []).filter((t) => {
+    const sameChain = String(t.chain || "") === String(chain || "");
+    if (!sameChain) return false;
+    if (!hasSpecifics || !specific) return true; // SVM or unspecified => ignore specific
+    return String(t.specificChain || "") === String(specific || "");
+  });
   return list
     .map(
       (t) =>
@@ -124,6 +127,8 @@ async function loadTokens() {
     // Manual trade selectors
     const netChainMan = document.getElementById("netChainMan");
     const netSpecMan = document.getElementById("netSpecificMan");
+    const netChainManTo = document.getElementById("netChainManTo");
+    const netSpecManTo = document.getElementById("netSpecificManTo");
     const manFrom = document.getElementById("manFromToken");
     const manTo = document.getElementById("manToToken");
 
@@ -133,13 +138,15 @@ async function loadTokens() {
       if (rebCash) rebCash.innerHTML = opts;
 
       const pickBySym = (sym) => {
-        const t = (TOKENS || []).find(
-          (x) =>
-            String(x.chain || "") === netChainReb.value &&
-            String(x.specificChain || "") === netSpecReb.value &&
-            String(x.symbol || "").toUpperCase() ===
-              String(sym || "").toUpperCase()
-        );
+        const hasSpecs = (CHAIN_SPECS[netChainReb.value] || []).length > 0;
+        const t = (TOKENS || []).find((x) => {
+          const sameChain = String(x.chain || "") === netChainReb.value;
+          if (!sameChain) return false;
+          const symOk = String(x.symbol || "").toUpperCase() === String(sym || "").toUpperCase();
+          if (!symOk) return false;
+          if (!hasSpecs || !netSpecReb.value) return true;
+          return String(x.specificChain || "") === netSpecReb.value;
+        });
         return t ? t.address : "";
       };
       const isSolLike =
@@ -152,9 +159,16 @@ async function loadTokens() {
     }
 
     if (netChainMan && netSpecMan) {
-      const optsM = tokenOptionsFor(netChainMan.value, netSpecMan.value);
-      if (manFrom) manFrom.innerHTML = optsM;
-      if (manTo) manTo.innerHTML = optsM;
+      const optsFrom = tokenOptionsFor(netChainMan.value, netSpecMan.value);
+      if (manFrom) manFrom.innerHTML = optsFrom;
+      const toChainVal = netChainManTo?.value || netChainMan?.value;
+      const toSpecVal = netSpecManTo?.value || "";
+      let optsTo = tokenOptionsFor(toChainVal, toSpecVal);
+      if (!optsTo || optsTo.length === 0) {
+        // Fallback: ignore specific and list by chain only (for SVM or empty lists)
+        optsTo = tokenOptionsFor(toChainVal, "");
+      }
+      if (manTo) manTo.innerHTML = optsTo;
 
       const pickBySymM = (sym) => {
         const t = (TOKENS || []).find(
@@ -166,13 +180,27 @@ async function loadTokens() {
         );
         return t ? t.address : "";
       };
+      const pickBySymTo = (sym) => {
+        const hasSpecsTo = (CHAIN_SPECS[toChainVal] || []).length > 0;
+        const t = (TOKENS || []).find((x) => {
+          const sameChain = String(x.chain || "") === String(toChainVal || "");
+          if (!sameChain) return false;
+          const symOk = String(x.symbol || "").toUpperCase() === String(sym || "").toUpperCase();
+          if (!symOk) return false;
+          if (!hasSpecsTo || !toSpecVal) return true;
+          return String(x.specificChain || "") === String(toSpecVal || "");
+        });
+        return t ? t.address : "";
+      };
       const isSolLikeM =
         netChainMan.value === "solana" || netChainMan.value === "svm";
       const defCashM =
         pickBySymM(isSolLikeM ? "wSOL" : "USDC") ||
         pickBySymM("DAI") ||
         pickBySymM("USDT");
-      const defTargM = pickBySymM(isSolLikeM ? "USDC" : "WETH");
+      const defTargM = pickBySymTo(
+        (toChainVal === "solana" || toChainVal === "svm") ? "USDC" : "WETH"
+      );
       if (manFrom && defCashM) manFrom.value = defCashM;
       if (manTo && defTargM) manTo.value = defTargM;
     }
@@ -294,22 +322,30 @@ async function manualTrade() {
   const chain = document.getElementById("netChainMan")?.value || "evm";
   const specificChain =
     document.getElementById("netSpecificMan")?.value || "eth";
+  const toChain = document.getElementById("netChainManTo")?.value || chain;
+  const toSpecificChain =
+    document.getElementById("netSpecificManTo")?.value || specificChain;
   const reason = document.getElementById("reason").value || "manual trade";
   const out = document.getElementById("tradeOut");
   if (out) out.textContent = "Processing...";
   try {
+    // Build payload
+    const payload = {
+      side,
+      amountUsd: amount,
+      reason,
+      fromToken,
+      toToken,
+      chain,
+      specificChain,
+      toChain,
+      toSpecificChain,
+    };
+
     const res = await fetch("/api/manual-trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        side,
-        amountUsd: amount,
-        reason,
-        fromToken,
-        toToken,
-        chain,
-        specificChain,
-      }),
+      body: JSON.stringify(payload),
     });
     const txt = await res.text();
     if (out) out.textContent = txt;
@@ -618,14 +654,18 @@ function initNetworkSelectors() {
   const netSpecReb = document.getElementById("netSpecificReb");
   const netChainMan = document.getElementById("netChainMan");
   const netSpecMan = document.getElementById("netSpecificMan");
+  const netChainManTo = document.getElementById("netChainManTo");
+  const netSpecManTo = document.getElementById("netSpecificManTo");
   const tokChain = document.getElementById("tokChain");
   const tokSpecific = document.getElementById("tokSpecific");
   const tokAddress = document.getElementById("tokAddress");
 
   if (netChainReb && netSpecReb) {
     setSpecificOptions(netSpecReb, netChainReb.value);
+    netSpecReb.disabled = (CHAIN_SPECS[netChainReb.value] || []).length === 0;
     netChainReb.addEventListener("change", async () => {
       setSpecificOptions(netSpecReb, netChainReb.value);
+      netSpecReb.disabled = (CHAIN_SPECS[netChainReb.value] || []).length === 0;
       await loadTokens();
       if (tokChain && tokSpecific) {
         tokChain.value = netChainReb.value;
@@ -640,8 +680,10 @@ function initNetworkSelectors() {
 
   if (netChainMan && netSpecMan) {
     setSpecificOptions(netSpecMan, netChainMan.value);
+    netSpecMan.disabled = (CHAIN_SPECS[netChainMan.value] || []).length === 0;
     netChainMan.addEventListener("change", async () => {
       setSpecificOptions(netSpecMan, netChainMan.value);
+      netSpecMan.disabled = (CHAIN_SPECS[netChainMan.value] || []).length === 0;
       await loadTokens();
       if (tokChain && tokSpecific) {
         tokChain.value = netChainMan.value;
@@ -654,10 +696,39 @@ function initNetworkSelectors() {
     netSpecMan.addEventListener("change", loadTokens);
   }
 
+  if (netChainManTo && netSpecManTo) {
+    setSpecificOptions(netSpecManTo, netChainManTo.value);
+    netSpecManTo.disabled = (CHAIN_SPECS[netChainManTo.value] || []).length === 0;
+    netChainManTo.addEventListener("change", async () => {
+      setSpecificOptions(netSpecManTo, netChainManTo.value);
+      netSpecManTo.disabled = (CHAIN_SPECS[netChainManTo.value] || []).length === 0;
+      // For chains without specifics (svm), clear value; otherwise keep first
+      const defaults = (CHAIN_SPECS[netChainManTo.value] || []);
+      netSpecManTo.value = defaults[0] || "";
+      // Repopulate To tokens immediately using chain-only if needed
+      const manTo = document.getElementById("manToToken");
+      if (manTo) {
+        manTo.innerHTML = tokenOptionsFor(netChainManTo.value, netSpecManTo.value || "");
+      }
+      await loadTokens();
+    });
+    netSpecManTo.addEventListener("change", async () => {
+      const manTo = document.getElementById("manToToken");
+      if (manTo) {
+        manTo.innerHTML = tokenOptionsFor(netChainManTo.value, netSpecManTo.value || "");
+      }
+      await loadTokens();
+    });
+  }
+
+  // No separate destination chain for manual trade in UI
+
   if (tokChain && tokSpecific) {
     setSpecificOptions(tokSpecific, tokChain.value);
+    tokSpecific.disabled = (CHAIN_SPECS[tokChain.value] || []).length === 0;
     tokChain.addEventListener("change", () =>
-      setSpecificOptions(tokSpecific, tokChain.value)
+      { setSpecificOptions(tokSpecific, tokChain.value);
+        tokSpecific.disabled = (CHAIN_SPECS[tokChain.value] || []).length === 0; }
     );
     if (tokAddress)
       tokAddress.placeholder =

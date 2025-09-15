@@ -64,6 +64,16 @@
       "symbol": "CARDS",
       "amount": 2095.8203686518546,
       "investedUsd": 550.0
+    },
+    "svm:eth:epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v": {
+      "symbol": "USDC",
+      "amount": 30.007938800540163,
+      "investedUsd": 30.0
+    },
+    "svm:polygon:epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v": {
+      "symbol": "USDC",
+      "amount": 10.001937000000002,
+      "investedUsd": 10.0
     }
   },
   "realized": [

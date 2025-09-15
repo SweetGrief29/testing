@@ -161,7 +161,7 @@
               <h5 class="card-title">Manual Trade</h5>
               <div class="row g-3 align-items-end">
                 <div class="col-6 col-md-3">
-                  <label class="form-label">Chain</label>
+                  <label class="form-label">From Chain</label>
                   <select id="netChainMan" class="form-select">
                     <option value="evm" selected>evm</option>
                     <option value="solana">solana</option>
@@ -169,11 +169,27 @@
                   </select>
                 </div>
                 <div class="col-6 col-md-3">
-                  <label class="form-label">Specific</label>
+                  <label class="form-label">From Specific</label>
                   <select id="netSpecificMan" class="form-select">
                     <option value="eth">eth</option>
                   </select>
                 </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Chain</label>
+                  <select id="netChainManTo" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Specific</label>
+                  <select id="netSpecificManTo" class="form-select">
+                    <option value="eth">eth</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                
                 <div class="col-12 col-md-4">
                   <label class="form-label">Side</label>
                   <select id="side" class="form-select">
@@ -407,6 +423,6 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=4"></script>
   </body>
 </html>
