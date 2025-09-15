@@ -217,7 +217,13 @@ async function addToken() {
   const sym = document.getElementById("tokSymbol").value.trim();
   const addr = document.getElementById("tokAddress").value.trim();
   const chain = document.getElementById("tokChain").value || "evm";
-  const specific = document.getElementById("tokSpecific").value || "eth";
+  let specific = document.getElementById("tokSpecific").value;
+  if (!specific) {
+    if (chain === "svm") specific = "svm"; else {
+      const defs = CHAIN_SPECS[chain] || [];
+      specific = defs.length ? defs[0] : "";
+    }
+  }
   const out = document.getElementById("tokensOut");
   if (out) out.textContent = "Processing...";
   try {
@@ -249,7 +255,13 @@ async function removeToken() {
   const sym = document.getElementById("tokSymbol").value.trim();
   const addr = document.getElementById("tokAddress").value.trim();
   const chain = document.getElementById("tokChain").value || "evm";
-  const specific = document.getElementById("tokSpecific").value || "eth";
+  let specific = document.getElementById("tokSpecific").value;
+  if (!specific) {
+    if (chain === "svm") specific = "svm"; else {
+      const defs = CHAIN_SPECS[chain] || [];
+      specific = defs.length ? defs[0] : "";
+    }
+  }
   const out = document.getElementById("tokensOut");
   if (out) out.textContent = "Removing...";
   try {
@@ -550,6 +562,58 @@ async function loadPnl() {
 }
 
 // =======================
+// PnL Live updater
+// =======================
+let PNL_TIMER = null;
+let PNL_LOADING = false;
+
+function startPnlLive() {
+  const secInput = document.getElementById("pnlLiveSec");
+  let sec = Number(secInput?.value || 15);
+  if (!Number.isFinite(sec) || sec < 5) sec = 15;
+  stopPnlLive();
+  PNL_TIMER = setInterval(async () => {
+    if (PNL_LOADING) return;
+    try {
+      PNL_LOADING = true;
+      await loadPnl();
+    } finally {
+      PNL_LOADING = false;
+    }
+  }, sec * 1000);
+}
+
+function stopPnlLive() {
+  if (PNL_TIMER) {
+    clearInterval(PNL_TIMER);
+    PNL_TIMER = null;
+  }
+}
+
+function initPnlLive() {
+  const toggle = document.getElementById("pnlLiveToggle");
+  const secInput = document.getElementById("pnlLiveSec");
+  if (toggle) {
+    toggle.addEventListener("change", () => {
+      if (toggle.checked) startPnlLive();
+      else stopPnlLive();
+    });
+  }
+  if (secInput) {
+    secInput.addEventListener("change", () => {
+      if (toggle?.checked) startPnlLive();
+    });
+  }
+  // Pause when tab hidden
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopPnlLive();
+    else if (toggle?.checked) startPnlLive();
+  });
+  // Start by default if toggle is on
+  if (toggle?.checked) startPnlLive();
+}
+
+// =======================
 // AI Suggestion / Status
 // =======================
 async function aiSuggest() {
@@ -726,9 +790,24 @@ function initNetworkSelectors() {
   if (tokChain && tokSpecific) {
     setSpecificOptions(tokSpecific, tokChain.value);
     tokSpecific.disabled = (CHAIN_SPECS[tokChain.value] || []).length === 0;
+    // Manage Tokens: always allow selecting specific for SVM
+    if (tokChain.value === "svm") {
+      tokSpecific.disabled = false;
+      tokSpecific.innerHTML = '<option value="svm">svm</option>';
+      tokSpecific.value = "svm";
+    } else if (tokSpecific.disabled) {
+      tokSpecific.value = "";
+    }
     tokChain.addEventListener("change", () =>
       { setSpecificOptions(tokSpecific, tokChain.value);
-        tokSpecific.disabled = (CHAIN_SPECS[tokChain.value] || []).length === 0; }
+        tokSpecific.disabled = (CHAIN_SPECS[tokChain.value] || []).length === 0;
+        if (tokChain.value === "svm") {
+          tokSpecific.disabled = false;
+          tokSpecific.innerHTML = '<option value="svm">svm</option>';
+          tokSpecific.value = "svm";
+        } else if (tokSpecific.disabled) {
+          tokSpecific.value = "";
+        } }
     );
     if (tokAddress)
       tokAddress.placeholder =
@@ -745,3 +824,4 @@ loadTokens();
 loadTrades();
 loadPnl();
 checkAIStatus();
+initPnlLive();

@@ -67,13 +67,18 @@
     },
     "svm:eth:epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v": {
       "symbol": "USDC",
-      "amount": 30.007938800540163,
-      "investedUsd": 30.0
+      "amount": 2030.6081188545563,
+      "investedUsd": 2030.0
     },
     "svm:polygon:epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v": {
       "symbol": "USDC",
-      "amount": 10.001937000000002,
-      "investedUsd": 10.0
+      "amount": 3010.9022070810242,
+      "investedUsd": 3010.0
+    },
+    "svm:eth:y1azt42vcecmstjw4zetk3vonarc1vxj5idjpiupump": {
+      "symbol": "FARTBOY",
+      "amount": 27823.651916385683,
+      "investedUsd": 1500.0
     }
   },
   "realized": [

@@ -355,12 +355,19 @@
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">PnL</h5>
-                <button
-                  id="btnPnlRefresh"
-                  class="btn btn-outline-secondary btn-sm"
-                >
-                  Refresh
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="pnlLiveToggle" checked />
+                    <label class="form-check-label small" for="pnlLiveToggle">Live</label>
+                  </div>
+                  <input id="pnlLiveSec" type="number" min="5" step="5" value="15" class="form-control form-control-sm" style="width: 70px" />
+                  <button
+                    id="btnPnlRefresh"
+                    class="btn btn-outline-secondary btn-sm"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
 
               <div class="row g-3 mt-1">
