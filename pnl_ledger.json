@@ -1,0 +1,86 @@
+{
+  "positions": {
+    "evm:eth:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+      "symbol": "WETH",
+      "amount": 0.22310422760200882,
+      "investedUsd": 1000.0
+    },
+    "evm:eth:0xdac17f958d2ee523a2206206994597c13d831ec7": {
+      "symbol": "USDT",
+      "amount": 309.9066011556071,
+      "investedUsd": 310.0
+    },
+    "evm:eth:0xcf0c122c6b73ff809c693db761e7baebe62b6a2e": {
+      "symbol": "FLOKI",
+      "amount": 113986.09369656902,
+      "investedUsd": 10.0
+    },
+    "evm:eth:0x7beb8f36650e9327d8c52735e3b3c9d1521576e3": {
+      "symbol": "KEK",
+      "amount": 1322751322.7513227,
+      "investedUsd": 10.0
+    },
+    "svm:svm:5uuh9rtdispq6hks6bp4ndu9pnjpxrxuiw6shbtbhgh2": {
+      "symbol": "TROLL",
+      "amount": 472.14353163361665,
+      "investedUsd": 100.0
+    },
+    "svm:svm:fdef2u9geiws7sdgpcuo2r1wgswkjr2mmvtecih6pump": {
+      "symbol": "MITCH",
+      "amount": 11518.236940148317,
+      "investedUsd": 210.0
+    },
+    "evm:polygon:0xeb51d9a39ad5eef215dc0bf39a8821ff804a0f01": {
+      "symbol": "LGNS",
+      "amount": 56.87120476812969,
+      "investedUsd": 550.0
+    },
+    "svm:svm:cb9dduft3zuqxqqsfa1c5ky935tereybw9xjxxhkpump": {
+      "symbol": "USDUC",
+      "amount": 27442.3710208562,
+      "investedUsd": 1000.0
+    },
+    "svm:svm:h8xq6pobjb9dtpmdtkwzwprnxu4bdehybxiouf8ppump": {
+      "symbol": "TOKABU",
+      "amount": 8278.145695364237,
+      "investedUsd": 300.0
+    },
+    "svm:svm:creiuhfwdwcn5mjbmjta9bbpyqrqf2tcbuzwspwfpump": {
+      "symbol": "PYTHIA",
+      "amount": 4330.8791684712,
+      "investedUsd": 300.0
+    },
+    "svm:svm:3arurph3nzarjbbpvgy42dcqsq9a5bfguxkozz4npump": {
+      "symbol": "STREAMER",
+      "amount": 210559.55690418108,
+      "investedUsd": 2000.0
+    },
+    "evm:eth:0xbe0ed4138121ecfc5c0e56b40517da27e6c5226b": {
+      "symbol": "AETHIR",
+      "amount": 16686.13382279326,
+      "investedUsd": 1000.0
+    },
+    "svm:svm:cardsccumfkoprzxt5vt3ksubxefecnz3h2pd3dkxyjp": {
+      "symbol": "CARDS",
+      "amount": 2095.8203686518546,
+      "investedUsd": 550.0
+    }
+  },
+  "realized": [
+    {
+      "time": "2025-09-04T20:04:48.171872+00:00",
+      "token": "WETH",
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "chain": "evm",
+      "specificChain": "eth",
+      "side": "sell",
+      "amount": 0.2911134523764001,
+      "proceedsUsd": 2000.0,
+      "costUsd": 1252.4469670645599,
+      "pnlUsd": 747.5530329354401
+    }
+  ],
+  "stats": {
+    "realizedUsd": 747.5530329354401
+  }
+}

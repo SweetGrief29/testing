@@ -1,0 +1,65 @@
+/* ===== existing ===== */
+pre {
+  background: #0b1020;
+  color: #e5e7eb;
+  padding: 12px;
+  border-radius: 8px;
+}
+.flash-highlight {
+  animation: flash 1.8s ease-out 1;
+}
+@keyframes flash {
+  0% {
+    background-color: #fff3cd;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* ===== add below ===== */
+/* Global radius */
+:root {
+  --radius: 16px; /* kartu */
+  --radius-sm: 12px; /* input, tombol, pager, sudut tabel */
+}
+
+/* Kartu & kontrol */
+.card {
+  border-radius: var(--radius) !important;
+  overflow: hidden;
+  border: 0;
+}
+.btn,
+.form-control,
+.form-select,
+.page-link {
+  border-radius: var(--radius-sm) !important;
+}
+
+/* Table rounded (pakai class "table-rounded" di HTML) */
+.table-rounded {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table-rounded thead th:first-child {
+  border-top-left-radius: var(--radius-sm);
+}
+.table-rounded thead th:last-child {
+  border-top-right-radius: var(--radius-sm);
+}
+.table-rounded tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-sm);
+}
+.table-rounded tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-sm);
+}
+.table-rounded th,
+.table-rounded td {
+  background-clip: padding-box;
+}
+
+/* Opsional: bayangan lebih soft */
+.card {
+  box-shadow: 0 0.6rem 1.25rem rgba(0, 0, 0, 0.1) !important;
+}

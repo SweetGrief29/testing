@@ -1,0 +1,262 @@
+async function loadBalances() {
+  const tbody = document.getElementById("balancesBody");
+  const totalCell = document.getElementById("totalCell");
+  const alertBox = document.getElementById("balancesAlert");
+  tbody.innerHTML = "";
+  alertBox.classList.add("d-none");
+  try {
+    const res = await fetch("/api/balances");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    let total = 0;
+    (data.balances || []).forEach((b) => {
+      total += b.value || 0;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${b.symbol || ""}</td>
+        <td>${b.chain || ""}</td>
+        <td>${b.specificChain || ""}</td>
+        <td class="text-end">${(b.amount || 0).toLocaleString()}</td>
+        <td class="text-end">${
+          b.price != null ? "$" + Number(b.price).toFixed(4) : ""
+        }</td>
+        <td class="text-end">${
+          b.value != null ? "$" + Number(b.value).toFixed(2) : ""
+        }</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    totalCell.textContent = "$" + total.toFixed(2);
+  } catch (e) {
+    alertBox.textContent = "Gagal memuat balances: " + e.message;
+    alertBox.classList.remove("d-none");
+  }
+}
+
+let TOKENS = [];
+
+async function loadTokens() {
+  const out = document.getElementById("tokensOut");
+  out.textContent = "";
+  try {
+    const res = await fetch("/api/tokens");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    TOKENS = data.tokens || [];
+    // Populate selects
+    const opts = TOKENS.map(
+      (t) => `<option value="${t.address}" data-specific="${t.specificChain || "eth"}">${t.symbol} (${t.specificChain || "eth"})</option>`
+    ).join("");
+    const rebTarget = document.getElementById("rebTargetToken");
+    const rebCash = document.getElementById("rebCashToken");
+    const manFrom = document.getElementById("manFromToken");
+    const manTo = document.getElementById("manToToken");
+    rebTarget.innerHTML = opts;
+    rebCash.innerHTML = opts;
+    manFrom.innerHTML = opts;
+    manTo.innerHTML = opts;
+    // Defaults
+    const findAddr = (sym) => {
+      const t = TOKENS.find((x) => (x.symbol || "").toUpperCase() === sym);
+      return t ? t.address : "";
+    };
+    const usdc = findAddr("USDC");
+    const weth = findAddr("WETH");
+    if (weth) rebTarget.value = weth;
+    if (usdc) rebCash.value = usdc;
+    if (usdc) manFrom.value = usdc;
+    if (weth) manTo.value = weth;
+
+    out.textContent = `Loaded ${TOKENS.length} tokens.`;
+  } catch (e) {
+    out.textContent = "Gagal memuat tokens: " + e.message;
+  }
+}
+
+async function addToken() {
+  const sym = document.getElementById("tokSymbol").value.trim();
+  const addr = document.getElementById("tokAddress").value.trim();
+  const specific = document.getElementById("tokSpecific").value || "eth";
+  const out = document.getElementById("tokensOut");
+  out.textContent = "Processing...";
+  try {
+    const res = await fetch("/api/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: sym, address: addr, specificChain: specific }),
+    });
+    const txt = await res.text();
+    out.textContent = txt;
+    loadTokens();
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+  }
+}
+
+async function rebalance() {
+  const targetPct = Number(document.getElementById("targetPct").value || 10);
+  const maxTrade = Number(document.getElementById("maxTrade").value || 500);
+  const reserve = Number(document.getElementById("reserve").value || 50);
+  const targetToken = document.getElementById("rebTargetToken").value;
+  const cashToken = document.getElementById("rebCashToken").value;
+  const out = document.getElementById("rebOut");
+  out.textContent = "Processing...";
+  try {
+    const res = await fetch("/api/rebalance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetPct,
+        maxTradeUsd: maxTrade,
+        reserveUsd: reserve,
+        targetToken,
+        cashToken,
+      }),
+    });
+    const txt = await res.text();
+    out.textContent = txt;
+    loadBalances();
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+  }
+}
+
+async function manualTrade() {
+  const side = document.getElementById("side").value;
+  const amount = Number(document.getElementById("amountUsd").value || 0);
+  const fromToken = document.getElementById("manFromToken").value;
+  const toToken = document.getElementById("manToToken").value;
+  const reason = document.getElementById("reason").value || "manual trade";
+  const out = document.getElementById("tradeOut");
+  out.textContent = "Processing...";
+  try {
+    const res = await fetch("/api/manual-trade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ side, amountUsd: amount, reason, fromToken, toToken }),
+    });
+    const txt = await res.text();
+    out.textContent = txt;
+    loadBalances();
+    loadTrades();
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+  }
+}
+
+document.getElementById("btnRefresh").addEventListener("click", loadBalances);
+document.getElementById("btnRebalance").addEventListener("click", rebalance);
+document.getElementById("btnAISuggest").addEventListener("click", aiSuggest);
+document.getElementById("btnExecute").addEventListener("click", manualTrade);
+document.getElementById("btnAddToken").addEventListener("click", addToken);
+document.getElementById("btnReloadTokens").addEventListener("click", loadTokens);
+document.getElementById("btnTradesRefresh").addEventListener("click", loadTrades);
+document.getElementById("btnTradesClear").addEventListener("click", clearTrades);
+
+// initial load
+loadBalances();
+loadTokens();
+loadTrades();
+
+// AI Suggestion for rebalance
+async function aiSuggest() {
+  const out = document.getElementById("rebOut");
+  out.textContent = "AI analyzing...";
+  try {
+    const res = await fetch("/api/ai/suggest-rebalance");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.targetPct) {
+      document.getElementById("targetPct").value = Number(data.targetPct);
+    }
+    if (data.targetToken) {
+      document.getElementById("rebTargetToken").value = data.targetToken;
+    }
+    if (data.cashToken) {
+      document.getElementById("rebCashToken").value = data.cashToken;
+    }
+    out.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    out.textContent = "AI Error: " + e.message;
+  }
+}
+
+async function checkAIStatus() {
+  const el = document.getElementById("aiStatus");
+  if (!el) return;
+  el.textContent = "Checking AI...";
+  try {
+    const res = await fetch("/api/ai/status?test=1");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.available && data.hasKey) {
+      el.textContent = `AI ready (${data.model})`;
+      el.classList.remove("text-danger");
+      el.classList.add("text-success");
+    } else if (!data.hasKey) {
+      el.textContent = "AI not configured (missing OPENAI_API_KEY)";
+      el.classList.remove("text-success");
+      el.classList.add("text-danger");
+    } else {
+      el.textContent = "AI module not available";
+      el.classList.remove("text-success");
+      el.classList.add("text-danger");
+    }
+  } catch (e) {
+    el.textContent = "AI check error: " + e.message;
+    el.classList.remove("text-success");
+    el.classList.add("text-danger");
+  }
+}
+
+// check AI readiness on load
+checkAIStatus();
+
+// Trade History
+async function loadTrades() {
+  const tbody = document.getElementById("tradesBody");
+  const note = document.getElementById("tradesNote");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  note.textContent = "";
+  try {
+    const res = await fetch("/api/trades?limit=100");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const list = data.trades || [];
+    list.forEach((t) => {
+      const tr = document.createElement("tr");
+      const amount = t.amountFrom ?? t.amountHuman ?? "";
+      const usd = t.tradeUsd ?? t.amountUsd ?? "";
+      tr.innerHTML = `
+        <td>${(t.serverTime || "").replace("T"," ").replace("Z","")}</td>
+        <td>${t.type || ""}</td>
+        <td>${t.side || ""}</td>
+        <td>${(t.fromToken || "").slice(0,10)}…</td>
+        <td>${(t.toToken || "").slice(0,10)}…</td>
+        <td class="text-end">${amount !== "" ? Number(amount).toLocaleString() : ""}</td>
+        <td class="text-end">${usd !== "" ? "$" + Number(usd).toFixed(2) : ""}</td>
+        <td>${t.status || ""}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    note.textContent = `Showing ${list.length} recent entr${list.length === 1 ? 'y':'ies'}.`;
+  } catch (e) {
+    note.textContent = "Error loading trades: " + e.message;
+  }
+}
+
+async function clearTrades() {
+  const note = document.getElementById("tradesNote");
+  try {
+    const res = await fetch("/api/trades/clear", { method: "POST" });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    await loadTrades();
+    note.textContent = "Cleared.";
+  } catch (e) {
+    note.textContent = "Clear failed: " + e.message;
+  }
+}
+

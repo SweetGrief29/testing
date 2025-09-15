@@ -1,0 +1,12 @@
+TRADES_FILE = Path(__file__).resolve().parent / "trades.jsonl"
+        with open(TRADES_FILE, "a", encoding="utf-8") as f:
+        if not TRADES_FILE.exists():
+        with open(TRADES_FILE, "r", encoding="utf-8") as f:
+        if TRADES_FILE.exists():
+            TRADES_FILE.unlink(missing_ok=True)  # type: ignore
+TRADES_FILE = Path(__file__).resolve().parent / "trades.jsonl"
+        with open(TRADES_FILE, "a", encoding="utf-8") as f:
+        if not TRADES_FILE.exists():
+        with open(TRADES_FILE, "r", encoding="utf-8") as f:
+        if TRADES_FILE.exists():
+            TRADES_FILE.unlink(missing_ok=True)  # type: ignore

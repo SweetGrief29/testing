@@ -1,0 +1,336 @@
+import os
+import requests
+from dotenv import load_dotenv
+from fastapi import FastAPI, Body, Request, Query
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pathlib import Path
+
+# === Load env ===
+load_dotenv()
+API_KEY = os.getenv("RECALL_API_KEY")
+BASE    = os.getenv("RECALL_API_URL", "https://api.sandbox.competitions.recall.network")
+if not API_KEY:
+    raise SystemExit("RECALL_API_KEY belum ada di .env")
+
+USDC_ETH = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+WETH_ETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+
+
+def hdrs():
+    return {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+
+def _get_price(token: str, chain: str = "evm", specific_chain: str = "eth") -> float:
+    r = requests.get(
+        f"{BASE}/api/price",
+        params={"token": token, "chain": chain, "specificChain": specific_chain},
+        headers=hdrs(), timeout=20
+    )
+    r.raise_for_status()
+    data = r.json()
+    return float(data.get("price", 0))
+
+
+# === FastAPI ===
+app = FastAPI(title="Recall Agent Dashboard")
+BASE_DIR = Path(__file__).resolve().parent
+app.mount("/static", StaticFiles(directory=str((BASE_DIR / "static").resolve())), name="static")
+templates = Jinja2Templates(directory=str((BASE_DIR / "templates").resolve()))
+
+# Optional LLM module (robust local import)
+llm_mod = None
+try:
+    # Try regular import if running inside the folder
+    import llm as _llm
+    llm_mod = _llm
+except Exception:
+    try:
+        import importlib.util, pathlib, sys
+        here = pathlib.Path(__file__).resolve().parent
+        llm_path = here / "llm.py"
+        if llm_path.exists():
+            spec = importlib.util.spec_from_file_location("llm", str(llm_path))
+            _mod = importlib.util.module_from_spec(spec)
+            assert spec and spec.loader
+            spec.loader.exec_module(_mod)  # type: ignore
+            llm_mod = _mod
+    except Exception:
+        llm_mod = None
+
+
+# ---------- Pages ----------
+@app.get("/")
+def home(request: Request):
+    # Info dasar tidak mengandung secret (API key hanya di server)
+    ctx = {"request": request, "base_url": BASE}
+    return templates.TemplateResponse("index.html", ctx)
+
+
+# ---------- API Proxies ----------
+@app.get("/api/balances")
+def api_balances():
+    try:
+        upstream_text = None
+        upstream_status = None
+        r = requests.get(f"{BASE}/api/agent/balances", headers=hdrs(), timeout=20)
+        upstream_text = r.text
+        upstream_status = r.status_code
+        r.raise_for_status()
+        return JSONResponse(r.json())
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "upstream_status": upstream_status,
+            "upstream_body": upstream_text,
+        }, status_code=500)
+
+
+@app.get("/api/price")
+def api_price(token: str = Query(...), chain: str = "evm", specificChain: str = "eth"):
+    try:
+        upstream_text = None
+        upstream_status = None
+        r = requests.get(
+            f"{BASE}/api/price",
+            params={"token": token, "chain": chain, "specificChain": specificChain},
+            headers=hdrs(), timeout=20,
+        )
+        upstream_text = r.text
+        upstream_status = r.status_code
+        r.raise_for_status()
+        return JSONResponse(r.json())
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "upstream_status": upstream_status,
+            "upstream_body": upstream_text,
+        }, status_code=500)
+
+
+@app.get("/api/ai/suggest-rebalance")
+def api_ai_suggest_rebalance():
+    if not llm_mod:
+        return JSONResponse({"error": "LLM module not available. Install 'openai' and ensure llm.py present."}, status_code=500)
+    try:
+        rb = requests.get(f"{BASE}/api/agent/balances", headers=hdrs(), timeout=20).json()
+        balances = rb.get("balances", [])
+        data = llm_mod.suggest_rebalance_with_llm(balances, default_target=WETH_ETH, default_cash=USDC_ETH)
+        return JSONResponse(data)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/ai/status")
+def api_ai_status(test: int = 0):
+    """Return whether LLM is available and API key present. If test=1, try init client."""
+    info = {"available": False, "hasKey": False, "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini")}
+    if not llm_mod:
+        return JSONResponse(info)
+    has_key = bool(os.getenv("OPENAI_API_KEY"))
+    info["hasKey"] = has_key
+    if not has_key:
+        return JSONResponse(info)
+    if test:
+        try:
+            # Only try to construct client; avoid actual network call for speed
+            _ = llm_mod._get_openai_client()
+            info["available"] = True
+        except Exception as e:
+            return JSONResponse({**info, "error": str(e)})
+        return JSONResponse(info)
+    # Without test flag, report optimistic availability if key exists and module present
+    info["available"] = True
+    return JSONResponse(info)
+
+# ---------- Token Registry (server-side) ----------
+import json
+from pathlib import Path
+
+TOKENS_FILE = Path(__file__).resolve().parent / "tokens.json"
+
+DEFAULT_TOKENS = [
+    {"symbol": "USDC", "address": USDC_ETH, "chain": "evm", "specificChain": "eth"},
+    {"symbol": "WETH", "address": WETH_ETH, "chain": "evm", "specificChain": "eth"},
+    {"symbol": "USDT", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "chain": "evm", "specificChain": "eth"},
+    {"symbol": "DAI",  "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "chain": "evm", "specificChain": "eth"},
+    {"symbol": "UNI",  "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", "chain": "evm", "specificChain": "eth"},
+]
+
+def _load_tokens():
+    if TOKENS_FILE.exists():
+        try:
+            with open(TOKENS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except Exception:
+            pass
+    return DEFAULT_TOKENS.copy()
+
+def _save_tokens(tokens):
+    with open(TOKENS_FILE, "w", encoding="utf-8") as f:
+        json.dump(tokens, f, ensure_ascii=False, indent=2)
+
+
+@app.get("/api/tokens")
+def api_tokens_list():
+    try:
+        return JSONResponse({"tokens": _load_tokens()})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/tokens")
+def api_tokens_add(body: dict = Body(...)):
+    try:
+        symbol = str(body.get("symbol", "")).strip().upper()
+        address = str(body.get("address", "")).strip()
+        chain = body.get("chain", "evm")
+        specific = body.get("specificChain", "eth")
+        if not symbol or not address:
+            return JSONResponse({"error": "symbol dan address wajib diisi"}, status_code=400)
+        if not address.lower().startswith("0x") or len(address) != 42:
+            return JSONResponse({"error": "address tidak valid (harus 0x.. 42 chars)"}, status_code=400)
+        tokens = _load_tokens()
+        # update if exists by symbol (same chain/specific), else append
+        updated = False
+        for t in tokens:
+            if t.get("symbol", "").upper() == symbol and t.get("specificChain") == specific and t.get("chain") == chain:
+                t["address"] = address
+                updated = True
+                break
+        if not updated:
+            tokens.append({"symbol": symbol, "address": address, "chain": chain, "specificChain": specific})
+        _save_tokens(tokens)
+        return JSONResponse({"ok": True, "tokens": tokens})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/rebalance")
+def api_rebalance(body: dict = Body(...)):
+    """
+    body: {
+      targetPct: float(0..100), maxTradeUsd: float, reserveUsd|usdcReserveUsd: float,
+      targetToken?: str, cashToken?: str, chain?: "evm", specificChain?: "eth"
+    }
+    Rebalance target token ke target % memakai cash token.
+    """
+    try:
+        target_pct     = float(body.get("targetPct", 10.0))/100.0
+        max_trade_usd  = float(body.get("maxTradeUsd", 500.0))
+        reserve_usd    = float(body.get("usdcReserveUsd", body.get("reserveUsd", 50.0)))
+        chain          = body.get("chain", "evm")
+        specific_chain = body.get("specificChain", "eth")
+        target_token   = str(body.get("targetToken", WETH_ETH))
+        cash_token     = str(body.get("cashToken", USDC_ETH))
+
+        rb = requests.get(f"{BASE}/api/agent/balances", headers=hdrs(), timeout=20).json()
+        b  = rb.get("balances", [])
+        total = sum(x.get("value",0.0) for x in b)
+        target_val = 0.0
+        target_price = None
+        target_amount = 0.0
+        cash_amt = 0.0
+        cash_price = 1.0
+        for x in b:
+            if x.get("chain") == chain and x.get("specificChain") == specific_chain:
+                if x["tokenAddress"].lower()==target_token.lower():
+                    target_val = x.get("value",0.0)
+                    target_amount = x.get("amount",0.0)
+                    if x.get("price") is not None:
+                        target_price = x.get("price")
+                if x["tokenAddress"].lower()==cash_token.lower():
+                    cash_amt   = x.get("amount",0.0)
+                    if x.get("price") is not None:
+                        cash_price = x.get("price")
+
+        target_val_goal = total * target_pct
+        delta = target_val_goal - target_val
+        if delta <= 0.0:
+            return JSONResponse({"message":"Sudah >= target, tidak perlu beli.", "deltaUsd": delta})
+
+        available = max(0.0, cash_amt*cash_price - reserve_usd)
+        trade_usd = min(delta, max_trade_usd, available)
+        if trade_usd <= 0.0:
+            return JSONResponse({"message":"Cash token tidak cukup setelah cadangan.", "deltaUsd": delta})
+
+        # convert USD to from-token units via price
+        if cash_price in (None, 0):
+            try:
+                cash_price = _get_price(cash_token, chain, specific_chain)
+            except Exception:
+                pass
+        amount_from = trade_usd / (cash_price or 1.0)
+        payload = {
+            "fromToken": cash_token, "toToken": target_token,
+            "amount": str(round(amount_from, 8)),
+            "reason": f"rebalance to {int(target_pct*100)}% target",
+            "slippageTolerance": "0.5",
+            "fromChain": chain, "fromSpecificChain": specific_chain,
+            "toChain":   chain, "toSpecificChain":   specific_chain,
+        }
+        r = requests.post(f"{BASE}/api/trade/execute", json=payload, headers=hdrs(), timeout=30)
+        r.raise_for_status()
+        return JSONResponse({
+            "targetPct": target_pct,
+            "deltaUsd": delta,
+            "tradeUsd": trade_usd,
+            "amountFrom": amount_from,
+            "fromToken": cash_token,
+            "toToken": target_token,
+            "tx": r.json(),
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/manual-trade")
+def api_manual_trade(body: dict = Body(...)):
+    """
+    body: {
+      side: "buy"|"sell",
+      amountUsd?: float, amountHuman?: float, reason?: str,
+      fromToken?: str, toToken?: str, chain?: str, specificChain?: str
+    }
+    """
+    try:
+        side = body.get("side","buy")
+        reason = body.get("reason","manual trade")
+        chain = body.get("chain","evm")
+        specific_chain = body.get("specificChain","eth")
+        from_token = body.get("fromToken")
+        to_token = body.get("toToken")
+        amount_human = body.get("amountHuman")
+        amount_usd = body.get("amountUsd")
+
+        if not from_token or not to_token:
+            if side == "buy":
+                from_token, to_token = USDC_ETH, WETH_ETH
+            else:
+                from_token, to_token = WETH_ETH, USDC_ETH
+
+        if amount_human is None:
+            amt = float(amount_usd or 0)
+            if amt <= 0:
+                return JSONResponse({"error":"amountUsd must be > 0 or provide amountHuman"}, status_code=400)
+            px = _get_price(from_token, chain, specific_chain)
+            amount_human = amt / px if px else amt
+
+        payload = {
+            "fromToken": from_token,
+            "toToken": to_token,
+            "amount": str(round(float(amount_human), 8)),
+            "reason": reason,
+            "slippageTolerance": "0.5",
+            "fromChain": chain, "fromSpecificChain": specific_chain,
+            "toChain":   chain, "toSpecificChain":   specific_chain,
+        }
+        r = requests.post(f"{BASE}/api/trade/execute", json=payload, headers=hdrs(), timeout=30)
+        r.raise_for_status()
+        return JSONResponse(r.json())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
