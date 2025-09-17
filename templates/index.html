@@ -234,6 +234,29 @@
                   </button>
                 </div>
               </div>
+              <hr class="my-3" />
+              <h6 class="mb-1">Batch Buy</h6>
+              <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Total USD</label>
+                  <input id="batchTotalUsd" type="number" min="1" step="1" value="100" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Chunk USD</label>
+                  <input id="batchChunkUsd" type="number" min="0.01" step="0.01" value="1" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Delay (detik)</label>
+                  <input id="batchDelaySec" type="number" min="0" step="0.1" value="1" class="form-control" />
+                </div>
+                <div class="col-12 col-md-8">
+                  <label class="form-label">Reason</label>
+                  <input id="batchReason" type="text" value="batch buy" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <button id="btnBatchBuy" class="btn btn-primary w-100">Mulai Batch Buy</button>
+                </div>
+              </div>
               <pre class="mt-3 small" id="tradeOut"></pre>
             </div>
           </div>

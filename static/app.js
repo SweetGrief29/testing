@@ -3,7 +3,8 @@
 // =======================
 let TOKENS = [];
 const CHAIN_SPECS = {
-  evm: ["eth", "polygon", "base"],
+  // Add Optimism and Arbitrum EVM specifics
+  evm: ["eth", "polygon", "base", "optimism", "arbitrum"],
   solana: ["sol"],
   // Disable specific for SVM: empty list
   svm: [],
@@ -332,11 +333,25 @@ async function manualTrade() {
   const fromToken = document.getElementById("manFromToken").value;
   const toToken = document.getElementById("manToToken").value;
   const chain = document.getElementById("netChainMan")?.value || "evm";
-  const specificChain =
-    document.getElementById("netSpecificMan")?.value || "eth";
+  const specificSelect = document.getElementById("netSpecificMan");
+  let specificChain =
+    specificSelect && specificSelect.value !== undefined
+      ? specificSelect.value || ""
+      : "";
+  if (!specificChain) {
+    if (chain === "evm") specificChain = "eth";
+    else if (chain === "solana") specificChain = "sol";
+    else if (chain === "svm") specificChain = "svm";
+  }
   const toChain = document.getElementById("netChainManTo")?.value || chain;
-  const toSpecificChain =
-    document.getElementById("netSpecificManTo")?.value || specificChain;
+  const toSpecificSelect = document.getElementById("netSpecificManTo");
+  let toSpecificChain =
+    toSpecificSelect && toSpecificSelect.value !== undefined
+      ? toSpecificSelect.value || ""
+      : "";
+  if (!toSpecificChain && toChain === chain) {
+    toSpecificChain = specificChain || "";
+  }
   const reason = document.getElementById("reason").value || "manual trade";
   const out = document.getElementById("tradeOut");
   if (out) out.textContent = "Processing...";
@@ -391,6 +406,76 @@ async function manualTrade() {
     if (out) out.textContent = "Error: " + e.message;
   }
 }
+
+async function batchBuy() {
+  const fromToken = document.getElementById("manFromToken")?.value;
+  const toToken = document.getElementById("manToToken")?.value;
+  const chain = document.getElementById("netChainMan")?.value || "evm";
+  const specificSelect = document.getElementById("netSpecificMan");
+  let specificChain =
+    specificSelect && specificSelect.value !== undefined
+      ? specificSelect.value || ""
+      : "";
+  if (!specificChain) {
+    if (chain === "evm") specificChain = "eth";
+    else if (chain === "solana") specificChain = "sol";
+    else if (chain === "svm") specificChain = "svm";
+  }
+  const toChain = document.getElementById("netChainManTo")?.value || chain;
+  const toSpecificSelect = document.getElementById("netSpecificManTo");
+  let toSpecificChain =
+    toSpecificSelect && toSpecificSelect.value !== undefined
+      ? toSpecificSelect.value || ""
+      : "";
+  if (!toSpecificChain) {
+    if (toChain === chain) {
+      toSpecificChain = specificChain || "";
+    } else if (toChain === "evm") toSpecificChain = "eth";
+    else if (toChain === "solana") toSpecificChain = "sol";
+    else if (toChain === "svm") toSpecificChain = "svm";
+  }
+  const totalUsd = Number(document.getElementById("batchTotalUsd")?.value || 0);
+  const chunkUsd = Number(document.getElementById("batchChunkUsd")?.value || 1);
+  const delaySec = Number(document.getElementById("batchDelaySec")?.value || 1);
+  const reason = document.getElementById("batchReason")?.value || "batch buy";
+  const out = document.getElementById("tradeOut");
+  if (out) out.textContent = "Processing batch...";
+  if (!fromToken || !toToken) {
+    if (out) out.textContent = "fromToken/toToken belum dipilih";
+    return;
+  }
+  if (!totalUsd || totalUsd <= 0) {
+    if (out) out.textContent = "totalUsd harus > 0";
+    return;
+  }
+  try {
+    const payload = {
+      fromToken,
+      toToken,
+      totalUsd,
+      chunkUsd,
+      delaySec,
+      reason,
+      chain,
+      specificChain,
+      toChain,
+      toSpecificChain,
+    };
+    const res = await fetch("/api/batch-buy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const txt = await res.text();
+    if (out) out.textContent = txt;
+    await loadBalances();
+    await loadTrades();
+    await loadPnl();
+  } catch (e) {
+    if (out) out.textContent = "Error: " + e.message;
+  }
+}
+
 
 // =======================
 // Trade History (with pagination)
@@ -670,6 +755,7 @@ document.getElementById("btnRefresh")?.addEventListener("click", loadBalances);
 document.getElementById("btnRebalance")?.addEventListener("click", rebalance);
 document.getElementById("btnAISuggest")?.addEventListener("click", aiSuggest);
 document.getElementById("btnExecute")?.addEventListener("click", manualTrade);
+document.getElementById("btnBatchBuy")?.addEventListener("click", batchBuy);
 document.getElementById("btnAddToken")?.addEventListener("click", addToken);
 document
   .getElementById("btnRemoveToken")
