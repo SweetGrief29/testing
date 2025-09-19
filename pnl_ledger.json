@@ -92,8 +92,8 @@
     },
     "evm:base:0x0ccfa8e00990d51980ecc48f9c7fc6847f0696e6": {
       "symbol": "LABUBU",
-      "amount": 355.1136363636364,
-      "investedUsd": 5.0
+      "amount": 8703339.535024656,
+      "investedUsd": 10197.0
     },
     "svm:svm:ajgsvymjlhvt3fteiytqqf8xbj1svs6t6amsufkhpump": {
       "symbol": "GROYPER",
@@ -117,8 +117,28 @@
     },
     "svm:svm:epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v": {
       "symbol": "USDC",
-      "amount": 26235.938778966385,
-      "investedUsd": 26222.0
+      "amount": 310489.3776172752,
+      "investedUsd": 310332.4
+    },
+    "evm:base:0x00a510c6f786f13231d943fd22d4c45e8c51accf": {
+      "symbol": "IP",
+      "amount": 8164410810.220741,
+      "investedUsd": 58865.22551099588
+    },
+    "evm:base:0x4200000000000000000000000000000000000006": {
+      "symbol": "WETH",
+      "amount": 1.1164149542492166,
+      "investedUsd": 5010.0
+    },
+    "evm:base:0x0738a4d015e75d08b7f2395877a9404d2841a5d1": {
+      "symbol": "TRUMP",
+      "amount": 84613933040.39471,
+      "investedUsd": 13000.0
+    },
+    "evm:base:0x0a0427414b68bddd84a57e39c1a21a5add259043": {
+      "symbol": "GOAT",
+      "amount": 186464886.31192118,
+      "investedUsd": 28000.0
     }
   },
   "realized": [
@@ -409,9 +429,21 @@
       "proceedsUsd": 200.0,
       "costUsd": 0.0,
       "pnlUsd": 200.0
+    },
+    {
+      "time": "2025-09-18T10:59:13.492219+00:00",
+      "token": "IP",
+      "address": "0x00a510c6f786f13231D943fD22d4C45E8C51AcCF",
+      "chain": "evm",
+      "specificChain": "base",
+      "side": "sell",
+      "amount": 506072874.4939271,
+      "proceedsUsd": 10000.0,
+      "costUsd": 3648.774489004124,
+      "pnlUsd": 6351.225510995876
     }
   ],
   "stats": {
-    "realizedUsd": 9347.649801876942
+    "realizedUsd": 15698.875312872817
   }
 }

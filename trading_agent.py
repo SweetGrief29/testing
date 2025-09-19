@@ -2,8 +2,6 @@ import os
 import argparse
 from typing import Dict, List, Optional
 
-import time
-
 import requests
 from dotenv import load_dotenv
 
@@ -217,20 +215,17 @@ def run_batch_buy(
     hdrs: Dict[str, str],
     total_usd: float,
     chunk_usd: float = 1.0,
-    delay_sec: float = 1.0,
     from_token: str = 'USDC',
     to_token: str = 'WETH',
     chain: str = 'evm',
     specific: str = 'eth',
     reason: Optional[str] = None,
 ) -> None:
-    """Execute repeated small buy trades until total_usd is spent."""
+    """Execute repeated buy trades until total_usd is spent."""
     if total_usd <= 0:
         raise SystemExit('total_usd harus > 0')
     if chunk_usd <= 0:
         raise SystemExit('chunk_usd harus > 0')
-    if delay_sec < 0:
-        raise SystemExit('delay_sec tidak boleh negatif')
 
     from_token_addr = resolve_token(from_token, specific)
     to_token_addr = resolve_token(to_token, specific)
@@ -257,13 +252,56 @@ def run_batch_buy(
             specific=specific,
         )
         spent += usd_chunk
-        if spent + 1e-9 >= total_usd:
-            break
-        if delay_sec:
-            print(f"Menunggu {delay_sec} detik...")
-            time.sleep(delay_sec)
 
     print(f"Selesai batch buy: total ${spent:.2f} dalam {iteration} langkah.")
+
+
+def run_batch_sell(
+    BASE: str,
+    hdrs: Dict[str, str],
+    total_usd: float,
+    chunk_usd: float = 1.0,
+    from_token: str = 'WETH',
+    to_token: str = 'USDC',
+    chain: str = 'evm',
+    specific: str = 'eth',
+    reason: Optional[str] = None,
+) -> None:
+    """Execute repeated sell trades until total_usd worth is sold."""
+    if total_usd <= 0:
+        raise SystemExit('total_usd harus > 0')
+    if chunk_usd <= 0:
+        raise SystemExit('chunk_usd harus > 0')
+
+    from_token_addr = resolve_token(from_token, specific)
+    to_token_addr = resolve_token(to_token, specific)
+    sold = 0.0
+    iteration = 0
+    base_reason = (reason or 'batch sell').strip() or 'batch sell'
+
+    while sold + 1e-9 < total_usd:
+        remaining = total_usd - sold
+        usd_chunk = min(chunk_usd, remaining)
+        price_from = get_price(BASE, hdrs, from_token_addr, chain=chain, specific=specific)
+        amount_from = trade_value_to_amount_usd(usd_chunk, price_from)
+        iteration += 1
+        print(f"Chunk {iteration}: sell ${usd_chunk:.2f} -> {amount_from:.6f} units")
+        print(f"Progress: ${sold + usd_chunk:.2f} / ${total_usd:.2f}")
+        execute_trade(
+            BASE,
+            hdrs,
+            from_token_addr,
+            to_token_addr,
+            amount_from,
+            reason=f"{base_reason} #{iteration}",
+            chain=chain,
+            specific=specific,
+        )
+        sold += usd_chunk
+
+    print(f"Selesai batch sell: total ${sold:.2f} dalam {iteration} langkah.")
+
+
 
 
 if __name__ == "__main__":
@@ -274,9 +312,9 @@ if __name__ == "__main__":
         raise SystemExit("RECALL_API_KEY belum ada di .env")
 
     parser = argparse.ArgumentParser(description="Trading Agent CLI (DEX multi-token)")
-    parser.add_argument("mode", nargs="?", default="rebalance", choices=["rebalance", "manual", "batch-buy"], help="Mode eksekusi")
+    parser.add_argument("mode", nargs="?", default="rebalance", choices=["rebalance", "manual", "batch-buy", "batch-sell"], help="Mode eksekusi")
     # rebalance params
-    parser.add_argument("--target-pct", type=float, default=TARGET_WETH_PCT * 100, help="Target % dari total untuk target token")
+    parser.add_argument("--target-pct", type=float, default=TARGET_WETH_PCT * 100, help="Target persentase dari total untuk target token")
     parser.add_argument("--max-trade-usd", type=float, default=MAX_TRADE_USD, help="Maks USD per trade")
     parser.add_argument("--reserve-usd", type=float, default=USDC_RESERVE_USD, help="Cadangan USD pada cash token")
     parser.add_argument("--min-trade-usd", type=float, default=MIN_TRADE_USD, help="Ambang minimal trade USD")
@@ -292,9 +330,8 @@ if __name__ == "__main__":
     parser.add_argument("--amount", type=float, help="Jumlah dalam human units dari from-token")
     parser.add_argument("--amount-usd", type=float, help="Alternatif: nominal USD untuk dikonversi ke human units dari from-token")
     parser.add_argument("--reason", type=str, default="manual trade", help="Alasan trade")
-    parser.add_argument("--total-usd", type=float, help="Total USD untuk batch buy")
-    parser.add_argument("--chunk-usd", type=float, default=1.0, help="Nominal USD per chunk batch buy (default 1)")
-    parser.add_argument("--delay-sec", type=float, default=1.0, help="Jeda antar chunk dalam detik (default 1)")
+    parser.add_argument("--total-usd", type=float, help="Total USD untuk batch trade")
+    parser.add_argument("--chunk-usd", type=float, default=1.0, help="Nominal USD per chunk batch trade (default 1)")
 
     args = parser.parse_args()
 
@@ -349,7 +386,7 @@ if __name__ == "__main__":
             chain=args.chain,
             specific=args.specific_chain,
         )
-    else:
+    elif args.mode == "batch-buy":
         if args.to_token is None:
             raise SystemExit("Mode batch-buy perlu --to-token untuk token yang dibeli")
         total_usd = args.total_usd if args.total_usd is not None else args.amount_usd
@@ -357,7 +394,6 @@ if __name__ == "__main__":
             raise SystemExit("Mode batch-buy perlu --total-usd (>0)")
         from_token = args.from_token or "USDC"
         chunk_usd = args.chunk_usd or 1.0
-        delay_sec = args.delay_sec if args.delay_sec is not None else 1.0
         reason = args.reason
         if reason == "manual trade":
             reason = "batch buy"
@@ -366,9 +402,29 @@ if __name__ == "__main__":
             hdrs,
             total_usd=total_usd,
             chunk_usd=chunk_usd,
-            delay_sec=delay_sec,
             from_token=from_token,
             to_token=args.to_token,
+            chain=args.chain,
+            specific=args.specific_chain,
+            reason=reason,
+        )
+    else:
+        total_usd = args.total_usd if args.total_usd is not None else args.amount_usd
+        if total_usd is None or total_usd <= 0:
+            raise SystemExit("Mode batch-sell perlu --total-usd (>0)")
+        from_token = args.from_token or "WETH"
+        to_token = args.to_token or "USDC"
+        chunk_usd = args.chunk_usd or 1.0
+        reason = args.reason
+        if reason == "manual trade":
+            reason = "batch sell"
+        run_batch_sell(
+            BASE,
+            hdrs,
+            total_usd=total_usd,
+            chunk_usd=chunk_usd,
+            from_token=from_token,
+            to_token=to_token,
             chain=args.chain,
             specific=args.specific_chain,
             reason=reason,

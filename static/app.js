@@ -59,6 +59,45 @@ function symbolOf(addr) {
   }
 }
 
+
+function getHideSmallElement() {
+  return document.getElementById("hideSmallBalances");
+}
+
+function baseHideThreshold() {
+  const el = getHideSmallElement();
+  return Number(el?.dataset.threshold || "1");
+}
+
+function currentMinUsd() {
+  const el = getHideSmallElement();
+  if (!el) return baseHideThreshold();
+  return el.checked ? baseHideThreshold() : 0;
+}
+
+function updateHideSmallLabel(minUsdValue) {
+  const el = getHideSmallElement();
+  const label = document.querySelector('label[for="hideSmallBalances"]');
+  if (!el || !label) return;
+  const stored = Number(el.dataset.threshold || baseHideThreshold());
+  let base = Number(minUsdValue != null ? minUsdValue : stored);
+  if (Number.isNaN(base) || base <= 0) {
+    base = stored;
+  }
+  if (!Number.isNaN(base) && base > 0) {
+    el.dataset.threshold = String(base);
+  }
+  if (el.checked) {
+    label.textContent = `Hide < $${base.toFixed(2)}`;
+  } else {
+    label.textContent = 'Show all';
+  }
+}
+
+function balancesEndpointUrl() {
+  const minUsd = currentMinUsd();
+  return `/api/balances?minUsd=${encodeURIComponent(minUsd)}`;
+}
 // formatters
 const fmtUSD = (n) =>
   "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -76,9 +115,10 @@ async function loadBalances() {
   tbody.innerHTML = "";
   alertBox && alertBox.classList.add("d-none");
   try {
-    const res = await fetch("/api/balances");
+    const res = await fetch(balancesEndpointUrl());
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+    if (data.minUsd != null) updateHideSmallLabel(Number(data.minUsd));
 
     let total = 0;
     (data.balances || []).forEach((b) => {
@@ -204,6 +244,48 @@ async function loadTokens() {
       );
       if (manFrom && defCashM) manFrom.value = defCashM;
       if (manTo && defTargM) manTo.value = defTargM;
+    }
+
+    const bridgeFromChain = document.getElementById("bridgeFromChain");
+    const bridgeFromSpec = document.getElementById("bridgeFromSpecific");
+    const bridgeFromToken = document.getElementById("bridgeFromToken");
+    const bridgeToChain = document.getElementById("bridgeToChain");
+    const bridgeToSpec = document.getElementById("bridgeToSpecific");
+    const bridgeToToken = document.getElementById("bridgeToToken");
+
+    const pickBridgeToken = (chainVal, specVal, sym) => {
+      return (TOKENS || []).find((x) => {
+        if (String(x.chain || "") !== String(chainVal || "")) return false;
+        if (specVal) {
+          if (String(x.specificChain || "") !== String(specVal || "")) return false;
+        }
+        return String(x.symbol || "").toUpperCase() === String(sym || "").toUpperCase();
+      });
+    };
+
+    if (bridgeFromChain && bridgeFromSpec && bridgeFromToken) {
+      const optsFromBridge = tokenOptionsFor(bridgeFromChain.value, bridgeFromSpec.value);
+      bridgeFromToken.innerHTML = optsFromBridge;
+      const isFromSol = bridgeFromChain.value === "solana" || bridgeFromChain.value === "svm";
+      const defFrom = pickBridgeToken(bridgeFromChain.value, bridgeFromSpec.value, isFromSol ? "wSOL" : "USDC")
+        || pickBridgeToken(bridgeFromChain.value, bridgeFromSpec.value, "WETH");
+      if (defFrom?.address) bridgeFromToken.value = defFrom.address;
+      else if (!bridgeFromToken.value && bridgeFromToken.options.length > 0) {
+        bridgeFromToken.value = bridgeFromToken.options[0].value;
+      }
+    }
+
+    if (bridgeToChain && bridgeToSpec && bridgeToToken) {
+      const optsToBridge = tokenOptionsFor(bridgeToChain.value, bridgeToSpec.value || "");
+      bridgeToToken.innerHTML = optsToBridge;
+      const isToSol = bridgeToChain.value === "solana" || bridgeToChain.value === "svm";
+      const defTo = pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, isToSol ? "USDC" : "WETH")
+        || pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, "USDC")
+        || pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, "wSOL");
+      if (defTo?.address) bridgeToToken.value = defTo.address;
+      else if (!bridgeToToken.value && bridgeToToken.options.length > 0) {
+        bridgeToToken.value = bridgeToToken.options[0].value;
+      }
     }
 
     if (out) out.textContent = `Loaded ${TOKENS.length} tokens.`;
@@ -383,7 +465,7 @@ async function manualTrade() {
 
     // tampilkan saldo token yang relevan
     try {
-      const res2 = await fetch("/api/balances");
+      const res2 = await fetch(balancesEndpointUrl());
       const data2 = await res2.json();
       const list = data2.balances || [];
       const focusAddr = side === "buy" ? toToken : fromToken;
@@ -407,7 +489,58 @@ async function manualTrade() {
   }
 }
 
-async function batchBuy() {
+
+async function bridgeTokens() {
+  const fromChain = document.getElementById("bridgeFromChain")?.value || "evm";
+  const fromSpecific = document.getElementById("bridgeFromSpecific")?.value || "";
+  const fromToken = document.getElementById("bridgeFromToken")?.value;
+  const toChain = document.getElementById("bridgeToChain")?.value || fromChain;
+  const toSpecific = document.getElementById("bridgeToSpecific")?.value || "";
+  const toToken = document.getElementById("bridgeToToken")?.value;
+  const amountUsd = Number(document.getElementById("bridgeAmountUsd")?.value || 0);
+  const reason = document.getElementById("bridgeReason")?.value || "bridge";
+  const out = document.getElementById("bridgeOut");
+  if (out) out.textContent = "Processing...";
+
+  if (!fromToken || !toToken) {
+    if (out) out.textContent = "fromToken/toToken belum dipilih";
+    return;
+  }
+  if (!amountUsd || amountUsd <= 0) {
+    if (out) out.textContent = "amountUsd harus > 0";
+    return;
+  }
+
+  const payload = {
+    fromToken,
+    toToken,
+    amountUsd,
+    reason,
+    fromChain,
+    toChain,
+  };
+  if (fromSpecific) payload.fromSpecificChain = fromSpecific;
+  if (toSpecific) payload.toSpecificChain = toSpecific;
+
+  try {
+    const res = await fetch("/api/bridge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const txt = await res.text();
+    if (out) out.textContent = txt;
+    if (res.ok) {
+      await loadBalances();
+      await loadTrades();
+      await loadPnl();
+    }
+  } catch (e) {
+    if (out) out.textContent = "Error: " + e.message;
+  }
+}
+
+async function batchTrade() {
   const fromToken = document.getElementById("manFromToken")?.value;
   const toToken = document.getElementById("manToToken")?.value;
   const chain = document.getElementById("netChainMan")?.value || "evm";
@@ -434,12 +567,12 @@ async function batchBuy() {
     else if (toChain === "solana") toSpecificChain = "sol";
     else if (toChain === "svm") toSpecificChain = "svm";
   }
+  const side = (document.getElementById("batchSide")?.value || "buy").toLowerCase();
   const totalUsd = Number(document.getElementById("batchTotalUsd")?.value || 0);
   const chunkUsd = Number(document.getElementById("batchChunkUsd")?.value || 1);
-  const delaySec = Number(document.getElementById("batchDelaySec")?.value || 1);
-  const reason = document.getElementById("batchReason")?.value || "batch buy";
+  const reason = document.getElementById("batchReason")?.value || `batch ${side}`;
   const out = document.getElementById("tradeOut");
-  if (out) out.textContent = "Processing batch...";
+  if (out) out.textContent = `Processing batch ${side}...`;
   if (!fromToken || !toToken) {
     if (out) out.textContent = "fromToken/toToken belum dipilih";
     return;
@@ -448,20 +581,24 @@ async function batchBuy() {
     if (out) out.textContent = "totalUsd harus > 0";
     return;
   }
+  if (!chunkUsd || chunkUsd <= 0) {
+    if (out) out.textContent = "chunkUsd harus > 0";
+    return;
+  }
   try {
     const payload = {
+      side,
       fromToken,
       toToken,
       totalUsd,
       chunkUsd,
-      delaySec,
       reason,
       chain,
       specificChain,
       toChain,
       toSpecificChain,
     };
-    const res = await fetch("/api/batch-buy", {
+    const res = await fetch("/api/batch-trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -475,6 +612,8 @@ async function batchBuy() {
     if (out) out.textContent = "Error: " + e.message;
   }
 }
+
+
 
 
 // =======================
@@ -752,10 +891,27 @@ async function checkAIStatus() {
 // Event listeners
 // =======================
 document.getElementById("btnRefresh")?.addEventListener("click", loadBalances);
+document.getElementById("hideSmallBalances")?.addEventListener("change", () => {
+  updateHideSmallLabel(currentMinUsd());
+  loadBalances();
+});
 document.getElementById("btnRebalance")?.addEventListener("click", rebalance);
 document.getElementById("btnAISuggest")?.addEventListener("click", aiSuggest);
 document.getElementById("btnExecute")?.addEventListener("click", manualTrade);
-document.getElementById("btnBatchBuy")?.addEventListener("click", batchBuy);
+document.getElementById("btnBatchTrade")?.addEventListener("click", batchTrade);
+document.getElementById("btnBridge")?.addEventListener("click", bridgeTokens);
+document.getElementById("batchSide")?.addEventListener("change", (evt) => {
+  const input = document.getElementById("batchReason");
+  if (!input) return;
+  const preset = String(input.value || "").toLowerCase();
+  if (!preset || preset.startsWith("batch ")) {
+    input.value = `batch ${evt.target.value}`;
+  }
+});
+const batchSideEl = document.getElementById("batchSide");
+if (batchSideEl) {
+  batchSideEl.dispatchEvent(new Event("change"));
+}
 document.getElementById("btnAddToken")?.addEventListener("click", addToken);
 document
   .getElementById("btnRemoveToken")
@@ -809,6 +965,10 @@ function initNetworkSelectors() {
   const tokChain = document.getElementById("tokChain");
   const tokSpecific = document.getElementById("tokSpecific");
   const tokAddress = document.getElementById("tokAddress");
+  const bridgeFromChain = document.getElementById("bridgeFromChain");
+  const bridgeFromSpec = document.getElementById("bridgeFromSpecific");
+  const bridgeToChain = document.getElementById("bridgeToChain");
+  const bridgeToSpec = document.getElementById("bridgeToSpecific");
 
   if (netChainReb && netSpecReb) {
     setSpecificOptions(netSpecReb, netChainReb.value);
@@ -873,6 +1033,70 @@ function initNetworkSelectors() {
 
   // No separate destination chain for manual trade in UI
 
+  if (bridgeFromChain && bridgeFromSpec) {
+    setSpecificOptions(bridgeFromSpec, bridgeFromChain.value);
+    bridgeFromSpec.disabled = (CHAIN_SPECS[bridgeFromChain.value] || []).length === 0;
+    if (bridgeFromChain.value === "svm") {
+      bridgeFromSpec.disabled = false;
+      bridgeFromSpec.innerHTML = "<option value='svm'>svm</option>";
+      bridgeFromSpec.value = "svm";
+    } else if (bridgeFromSpec.disabled) {
+      bridgeFromSpec.value = "";
+    } else if (!bridgeFromSpec.value) {
+      const defs = CHAIN_SPECS[bridgeFromChain.value] || [];
+      bridgeFromSpec.value = defs[0] || "";
+    }
+    bridgeFromChain.addEventListener("change", async () => {
+      setSpecificOptions(bridgeFromSpec, bridgeFromChain.value);
+      bridgeFromSpec.disabled = (CHAIN_SPECS[bridgeFromChain.value] || []).length === 0;
+      if (bridgeFromChain.value === "svm") {
+        bridgeFromSpec.disabled = false;
+        bridgeFromSpec.innerHTML = "<option value='svm'>svm</option>";
+        bridgeFromSpec.value = "svm";
+      } else if (bridgeFromSpec.disabled) {
+        bridgeFromSpec.value = "";
+      } else if (!bridgeFromSpec.value) {
+        const defs = CHAIN_SPECS[bridgeFromChain.value] || [];
+        bridgeFromSpec.value = defs[0] || "";
+      }
+      await loadTokens();
+    });
+    bridgeFromSpec.addEventListener("change", loadTokens);
+  }
+
+  if (bridgeToChain && bridgeToSpec) {
+    setSpecificOptions(bridgeToSpec, bridgeToChain.value);
+    bridgeToSpec.disabled = (CHAIN_SPECS[bridgeToChain.value] || []).length === 0;
+    if (bridgeToChain.value === "svm") {
+      bridgeToSpec.disabled = false;
+      bridgeToSpec.innerHTML = "<option value='svm'>svm</option>";
+      bridgeToSpec.value = "svm";
+    } else if (bridgeToSpec.disabled) {
+      bridgeToSpec.value = "";
+    } else if (!bridgeToSpec.value) {
+      const defs = CHAIN_SPECS[bridgeToChain.value] || [];
+      bridgeToSpec.value = defs[0] || "";
+    }
+    bridgeToChain.addEventListener("change", async () => {
+      setSpecificOptions(bridgeToSpec, bridgeToChain.value);
+      bridgeToSpec.disabled = (CHAIN_SPECS[bridgeToChain.value] || []).length === 0;
+      if (bridgeToChain.value === "svm") {
+        bridgeToSpec.disabled = false;
+        bridgeToSpec.innerHTML = "<option value='svm'>svm</option>";
+        bridgeToSpec.value = "svm";
+      } else if (bridgeToSpec.disabled) {
+        bridgeToSpec.value = "";
+      } else if (!bridgeToSpec.value) {
+        const defs = CHAIN_SPECS[bridgeToChain.value] || [];
+        bridgeToSpec.value = defs[0] || "";
+      }
+      await loadTokens();
+    });
+    bridgeToSpec.addEventListener("change", loadTokens);
+  }
+
+  // No separate destination chain for manual trade in UI
+
   if (tokChain && tokSpecific) {
     setSpecificOptions(tokSpecific, tokChain.value);
     tokSpecific.disabled = (CHAIN_SPECS[tokChain.value] || []).length === 0;
@@ -905,6 +1129,7 @@ function initNetworkSelectors() {
 // Initial load
 // =======================
 initNetworkSelectors();
+updateHideSmallLabel();
 loadBalances();
 loadTokens();
 loadTrades();

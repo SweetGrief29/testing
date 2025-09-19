@@ -1,7 +1,6 @@
 import os
 import asyncio
 import requests
-import time
 from dotenv import load_dotenv
 from fastapi import FastAPI, Body, Request, Query
 from fastapi.responses import JSONResponse
@@ -24,6 +23,56 @@ WETH_ETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
 def hdrs():
     return {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+
+def _default_specific_for_chain(chain: str | None):
+    if not chain:
+        return None
+    c = str(chain).lower()
+    if c == "evm":
+        return "eth"
+    if c == "solana":
+        return "sol"
+    if c == "svm":
+        return "svm"
+    return None
+
+
+def _execute_trade_payload(payload: dict):
+    upstream_text = None
+    upstream_status = None
+
+    def _execute(p: dict):
+        return requests.post(f"{BASE}/api/trade/execute", json=p, headers=hdrs(), timeout=30)
+
+    r = _execute(payload)
+    upstream_text = r.text
+    upstream_status = r.status_code
+    if r.status_code in (400, 404) and (str(payload.get("fromChain")) == "svm" or str(payload.get("toChain")) == "svm"):
+        fallback = dict(payload)
+        changed = False
+        if str(fallback.get("fromChain")) == "svm":
+            fallback["fromChain"] = "solana"
+            if not fallback.get("fromSpecificChain"):
+                fallback["fromSpecificChain"] = "svm"
+            changed = True
+        if str(fallback.get("toChain")) == "svm":
+            fallback["toChain"] = "solana"
+            if not fallback.get("toSpecificChain"):
+                fallback["toSpecificChain"] = "svm"
+            changed = True
+        if changed:
+            r2 = _execute(fallback)
+            upstream_text = r2.text
+            upstream_status = r2.status_code
+            r2.raise_for_status()
+            return r2.json(), upstream_status, upstream_text
+        r.raise_for_status()
+        return r.json(), upstream_status, upstream_text
+    r.raise_for_status()
+    return r.json(), upstream_status, upstream_text
+
+
 
 
 def _get_price(token: str, chain: str = "evm", specific_chain: str | None = "eth") -> float:
@@ -71,13 +120,13 @@ except Exception:
 @app.get("/")
 def home(request: Request):
     # Info dasar tidak mengandung secret (API key hanya di server)
-    ctx = {"request": request, "base_url": BASE}
+    ctx = {"request": request, "base_url": BASE, "hide_small_default": float(os.getenv("BALANCE_HIDE_USD_THRESHOLD", "1"))}
     return templates.TemplateResponse("index.html", ctx)
 
 
 # ---------- API Proxies ----------
 @app.get("/api/balances")
-def api_balances():
+def api_balances(minUsd: float | None = Query(None)):
     try:
         upstream_text = None
         upstream_status = None
@@ -85,7 +134,26 @@ def api_balances():
         upstream_text = r.text
         upstream_status = r.status_code
         r.raise_for_status()
-        return JSONResponse(r.json())
+        resp = r.json()
+        try:
+            if minUsd is None:
+                threshold = float(os.getenv("BALANCE_HIDE_USD_THRESHOLD", "1"))
+            else:
+                threshold = max(0.0, float(minUsd))
+            items = []
+            for it in resp.get("balances", []):
+                val = float(it.get("value", 0) or 0)
+                token_addr = str(it.get("tokenAddress", ""))
+                kind = str(it.get("kind", "")).lower()
+                is_token = bool(token_addr) or kind == "token"
+                if is_token and val < threshold:
+                    continue
+                items.append(it)
+            resp["balances"] = items
+            resp["minUsd"] = threshold
+        except Exception:
+            pass
+        return JSONResponse(resp)
     except Exception as e:
         return JSONResponse({
             "error": str(e),
@@ -246,7 +314,6 @@ def _read_trades(limit: int = 100):
         return list(reversed(items))[: max(0, int(limit or 0)) or 100]
     except Exception:
         return []
-
 
 @app.get("/api/trades")
 def api_trades(limit: int = 50):
@@ -656,51 +723,38 @@ def api_rebalance(body: dict = Body(...)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-@app.post("/api/batch-buy")
-def api_batch_buy(body: dict = Body(...)):
+@app.post("/api/batch-trade")
+def api_batch_trade(body: dict = Body(...)):
     try:
-        chain = body.get("chain","evm")
+        side = str(body.get("side", "buy")).lower()
+        if side not in {"buy", "sell"}:
+            return JSONResponse({"error": "side harus buy atau sell"}, status_code=400)
+        chain = body.get("chain", "evm")
         specific_chain = body.get("specificChain")
         if specific_chain is not None:
             specific_chain = str(specific_chain).strip() or None
         if specific_chain is None:
-            if str(chain).lower() == "evm":
-                specific_chain = "eth"
-            elif str(chain).lower() == "solana":
-                specific_chain = "sol"
-            elif str(chain).lower() == "svm":
-                specific_chain = "svm"
+            specific_chain = _default_specific_for_chain(chain)
         to_chain = body.get("toChain", chain)
         to_specific_chain = body.get("toSpecificChain")
         if to_specific_chain is not None:
             to_specific_chain = str(to_specific_chain).strip() or None
         if to_specific_chain is None:
-            if str(to_chain).lower() == "evm":
-                to_specific_chain = "eth"
-            elif str(to_chain).lower() == "solana":
-                to_specific_chain = "sol"
-            elif str(to_chain).lower() == "svm":
-                to_specific_chain = "svm"
+            to_specific_chain = _default_specific_for_chain(to_chain)
         from_token = body.get("fromToken")
         to_token = body.get("toToken")
         total_usd = float(body.get("totalUsd") or 0)
         chunk_usd = float(body.get("chunkUsd") or 0)
-        delay_sec = float(body.get("delaySec") or 0)
-        reason_base = str(body.get("reason", "batch buy") or "batch buy").strip() or "batch buy"
+        reason_base = str(body.get("reason", f"batch {side}") or f"batch {side}").strip() or f"batch {side}"
         if not from_token or not to_token:
             return JSONResponse({"error": "fromToken dan toToken wajib"}, status_code=400)
         if total_usd <= 0:
             return JSONResponse({"error": "totalUsd harus > 0"}, status_code=400)
         if chunk_usd <= 0:
             return JSONResponse({"error": "chunkUsd harus > 0"}, status_code=400)
-        if delay_sec < 0:
-            return JSONResponse({"error": "delaySec tidak boleh negatif"}, status_code=400)
         spent = 0.0
         iteration = 0
         chunks = []
-
-        def _execute(p):
-            return requests.post(f"{BASE}/api/trade/execute", json=p, headers=hdrs(), timeout=30)
 
         while spent + 1e-9 < total_usd:
             remaining = total_usd - spent
@@ -727,49 +781,25 @@ def api_batch_buy(body: dict = Body(...)):
                 payload["fromSpecificChain"] = specific_chain
             if to_specific_chain:
                 payload["toSpecificChain"] = to_specific_chain
-            upstream_text = None
+
             upstream_status = None
+            upstream_text = None
             try:
-                r = _execute(payload)
-                upstream_text = r.text
-                upstream_status = r.status_code
-                if r.status_code in (400, 404) and (str(payload.get("fromChain")) == "svm" or str(payload.get("toChain")) == "svm"):
-                    fallback = dict(payload)
-                    changed = False
-                    if str(fallback.get("fromChain")) == "svm":
-                        fallback["fromChain"] = "solana"
-                        if not fallback.get("fromSpecificChain"):
-                            fallback["fromSpecificChain"] = "svm"
-                        changed = True
-                    if str(fallback.get("toChain")) == "svm":
-                        fallback["toChain"] = "solana"
-                        if not fallback.get("toSpecificChain"):
-                            fallback["toSpecificChain"] = "svm"
-                        changed = True
-                    if changed:
-                        r2 = _execute(fallback)
-                        upstream_text = r2.text
-                        upstream_status = r2.status_code
-                        r2.raise_for_status()
-                        resp = r2.json()
-                    else:
-                        r.raise_for_status()
-                        resp = r.json()
-                else:
-                    r.raise_for_status()
-                    resp = r.json()
+                resp, upstream_status, upstream_text = _execute_trade_payload(payload)
             except Exception as exc:
-                err_payload = {
-                    "type": "batch",
-                    "status": "error",
-                    "iteration": iteration,
-                    "error": str(exc),
-                    "payload": payload,
-                    "upstream_status": upstream_status,
-                    "upstream_body": upstream_text,
-                }
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                body_txt = getattr(getattr(exc, "response", None), "text", None)
                 try:
-                    _append_trade(err_payload)
+                    _append_trade({
+                        "type": "batch",
+                        "side": side,
+                        "status": "error",
+                        "iteration": iteration,
+                        "error": str(exc),
+                        "payload": payload,
+                        "upstream_status": status if status is not None else upstream_status,
+                        "upstream_body": body_txt if body_txt is not None else upstream_text,
+                    })
                 except Exception:
                     pass
                 return JSONResponse({
@@ -777,46 +807,53 @@ def api_batch_buy(body: dict = Body(...)):
                     "iteration": iteration,
                     "spent": spent,
                     "chunks": chunks,
-                    "upstream_status": upstream_status,
-                    "upstream_body": upstream_text,
-                }, status_code=500)
+                    "side": side,
+                    "upstream_status": status if status is not None else upstream_status,
+                    "upstream_body": body_txt if body_txt is not None else upstream_text,
+                }, status_code=status if isinstance(status, int) else 500)
 
             chunk_entry = {
                 "iteration": iteration,
                 "usd": usd_chunk,
                 "amountHuman": amount_human,
                 "response": resp,
+                "side": side,
             }
             chunks.append(chunk_entry)
             spent += usd_chunk
             try:
-                _append_trade({
+                log = {
                     "type": "batch",
+                    "side": side,
                     "status": "ok",
                     "iteration": iteration,
                     "usd": usd_chunk,
                     "amountHuman": amount_human,
                     "payload": payload,
                     "response": resp,
-                })
-                _ensure_token_known(to_token, None, to_chain, to_specific_chain or "")
-                try:
-                    price_to = _get_price(to_token, to_chain, to_specific_chain)
-                except Exception:
-                    price_to = None
-                cost_usd = float(usd_chunk)
-                if price_to:
-                    amount_to = cost_usd / float(price_to)
-                    _ledger_buy(to_token, to_chain, to_specific_chain or "", amount_to=amount_to, cost_usd=cost_usd, symbol=None)
+                }
+                _append_trade(log)
+                if side == "buy":
+                    _ensure_token_known(to_token, None, to_chain, to_specific_chain or "")
+                else:
+                    _ensure_token_known(from_token, None, chain, specific_chain or "")
+                if side == "buy":
+                    try:
+                        price_to = _get_price(to_token, to_chain, to_specific_chain)
+                    except Exception:
+                        price_to = None
+                    cost_usd = float(usd_chunk)
+                    if price_to:
+                        amount_to = cost_usd / float(price_to)
+                        _ledger_buy(to_token, to_chain, to_specific_chain or "", amount_to=amount_to, cost_usd=cost_usd, symbol=None)
+                else:
+                    _ledger_sell(from_token, chain, specific_chain or "", amount_from=float(amount_human), proceeds_usd=float(usd_chunk), symbol=None)
             except Exception:
                 pass
-            if spent + 1e-9 >= total_usd:
-                break
-            if delay_sec:
-                time.sleep(delay_sec)
 
         return JSONResponse({
             "status": "ok",
+            "side": side,
             "totalUsd": spent,
             "chunks": chunks,
             "iterations": iteration,
@@ -825,6 +862,7 @@ def api_batch_buy(body: dict = Body(...)):
         try:
             _append_trade({
                 "type": "batch",
+                "side": str(body.get("side")),
                 "status": "error",
                 "error": str(e),
                 "body": body,
@@ -832,6 +870,7 @@ def api_batch_buy(body: dict = Body(...)):
         except Exception:
             pass
         return JSONResponse({"error": str(e)}, status_code=500)
+
 
 
 @app.post("/api/manual-trade")
@@ -844,36 +883,20 @@ def api_manual_trade(body: dict = Body(...)):
     }
     """
     try:
-        side = body.get("side","buy")
-        reason = body.get("reason","manual trade")
-        # Source chain
-        chain = body.get("chain","evm")
+        side = body.get("side", "buy")
+        reason = body.get("reason", "manual trade")
+        chain = body.get("chain", "evm")
         specific_chain = body.get("specificChain")
         if specific_chain is not None:
-            specific_chain = str(specific_chain).strip()
-            if specific_chain == "":
-                specific_chain = None
+            specific_chain = str(specific_chain).strip() or None
         if specific_chain is None:
-            if str(chain).lower() == "evm":
-                specific_chain = "eth"
-            elif str(chain).lower() == "solana":
-                specific_chain = "sol"
-            elif str(chain).lower() == "svm":
-                specific_chain = "svm"
-        # Destination chain (optional for cross-chain/bridge)
+            specific_chain = _default_specific_for_chain(chain)
         to_chain = body.get("toChain", chain)
         to_specific_chain = body.get("toSpecificChain")
         if to_specific_chain is not None:
-            to_specific_chain = str(to_specific_chain).strip()
-            if to_specific_chain == "":
-                to_specific_chain = None
+            to_specific_chain = str(to_specific_chain).strip() or None
         if to_specific_chain is None:
-            if str(to_chain).lower() == "evm":
-                to_specific_chain = "eth"
-            elif str(to_chain).lower() == "solana":
-                to_specific_chain = "sol"
-            elif str(to_chain).lower() == "svm":
-                to_specific_chain = "svm"
+            to_specific_chain = _default_specific_for_chain(to_chain)
         from_token = body.get("fromToken")
         to_token = body.get("toToken")
         amount_human = body.get("amountHuman")
@@ -891,7 +914,7 @@ def api_manual_trade(body: dict = Body(...)):
         if amount_human is None:
             amt = float(amount_usd or 0)
             if amt <= 0:
-                return JSONResponse({"error":"amountUsd must be > 0 or provide amountHuman"}, status_code=400)
+                return JSONResponse({"error": "amountUsd must be > 0 or provide amountHuman"}, status_code=400)
             px = _get_price(from_token, chain, specific_chain)
             amount_human = amt / px if px else amt
 
@@ -902,50 +925,39 @@ def api_manual_trade(body: dict = Body(...)):
             "reason": reason,
             "slippageTolerance": "0.5",
             "fromChain": chain,
-            "toChain":   to_chain,
+            "toChain": to_chain,
         }
         if specific_chain:
             payload["fromSpecificChain"] = specific_chain
         if to_specific_chain:
             payload["toSpecificChain"] = to_specific_chain
-        upstream_text = None
+
         upstream_status = None
+        upstream_text = None
+        try:
+            resp, upstream_status, upstream_text = _execute_trade_payload(payload)
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            body_txt = getattr(getattr(exc, "response", None), "text", None)
+            try:
+                _append_trade({
+                    "type": "manual",
+                    "side": side,
+                    "error": str(exc),
+                    "status": "error",
+                    "body": body,
+                    "payload": payload,
+                    "upstream_status": status if status is not None else upstream_status,
+                    "upstream_body": body_txt if body_txt is not None else upstream_text,
+                })
+            except Exception:
+                pass
+            return JSONResponse({
+                "error": str(exc),
+                "upstream_status": status if status is not None else upstream_status,
+                "upstream_body": body_txt if body_txt is not None else upstream_text,
+            }, status_code=status if isinstance(status, int) else 500)
 
-        def _execute(p):
-            rr = requests.post(f"{BASE}/api/trade/execute", json=p, headers=hdrs(), timeout=30)
-            return rr
-
-        # Attempt 1: as-is
-        r = _execute(payload)
-        upstream_text = r.text
-        upstream_status = r.status_code
-        if r.status_code in (400, 404) and (str(payload.get("fromChain")) == "svm" or str(payload.get("toChain")) == "svm"):
-            # Attempt 2: fallback mapping svm -> solana+svm
-            fallback = dict(payload)
-            changed = False
-            if str(fallback.get("fromChain")) == "svm":
-                fallback["fromChain"] = "solana"
-                # move specific if missing
-                if not fallback.get("fromSpecificChain"):
-                    fallback["fromSpecificChain"] = "svm"
-                changed = True
-            if str(fallback.get("toChain")) == "svm":
-                fallback["toChain"] = "solana"
-                if not fallback.get("toSpecificChain"):
-                    fallback["toSpecificChain"] = "svm"
-                changed = True
-            if changed:
-                r2 = _execute(fallback)
-                upstream_text = r2.text
-                upstream_status = r2.status_code
-                r2.raise_for_status()
-                resp = r2.json()
-            else:
-                r.raise_for_status()
-                resp = r.json()
-        else:
-            r.raise_for_status()
-            resp = r.json()
         try:
             _append_trade({
                 "type": "manual",
@@ -959,13 +971,10 @@ def api_manual_trade(body: dict = Body(...)):
                 "response": resp,
                 "status": "ok",
             })
-            # Ensure traded tokens are known in registry for display
             if side == "buy":
                 _ensure_token_known(to_token, None, to_chain, to_specific_chain or "")
             else:
                 _ensure_token_known(from_token, None, chain, specific_chain or "")
-            # PnL ledger update
-            # Compute USD and units using price snapshots
             try:
                 price_from = _get_price(from_token, chain, specific_chain)
             except Exception:
@@ -975,17 +984,15 @@ def api_manual_trade(body: dict = Body(...)):
             except Exception:
                 price_to = None
             if side == "buy":
-                # buying to_token using from_token funds
                 cost_usd = float(amount_usd) if amount_usd is not None else (float(amount_human) * float(price_from or 0))
                 if cost_usd and price_to:
                     amount_to = cost_usd / float(price_to)
                     _ledger_buy(to_token, to_chain, to_specific_chain or "", amount_to=amount_to, cost_usd=cost_usd, symbol=None)
             else:
-                # selling from_token to to_token (cash)
                 amt_from = float(amount_human)
                 proceeds_usd = float(amount_usd) if amount_usd is not None else (amt_from * float(price_from or 0))
                 if amt_from and proceeds_usd:
-                    _ledger_sell(from_token, chain, specific_chain, amount_from=amt_from, proceeds_usd=proceeds_usd, symbol=None)
+                    _ledger_sell(from_token, chain, specific_chain or "", amount_from=amt_from, proceeds_usd=proceeds_usd, symbol=None)
         except Exception:
             pass
         return JSONResponse(resp)
@@ -996,17 +1003,132 @@ def api_manual_trade(body: dict = Body(...)):
                 "error": str(e),
                 "status": "error",
                 "body": body,
-                "payload": locals().get("payload"),
-                "upstream_status": locals().get("upstream_status"),
-                "upstream_body": locals().get("upstream_text"),
             })
         except Exception:
             pass
-        return JSONResponse({
-            "error": str(e),
-            "upstream_status": locals().get("upstream_status"),
-            "upstream_body": locals().get("upstream_text"),
-        }, status_code=500)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+
+@app.post("/api/bridge")
+def api_bridge(body: dict = Body(...)):
+    try:
+        from_chain = body.get("fromChain", "evm")
+        from_specific = body.get("fromSpecificChain")
+        if from_specific is not None:
+            from_specific = str(from_specific).strip() or None
+        if from_specific is None:
+            from_specific = _default_specific_for_chain(from_chain)
+        to_chain = body.get("toChain") or body.get("targetChain")
+        if not to_chain:
+            to_chain = from_chain
+        to_specific = body.get("toSpecificChain")
+        if to_specific is not None:
+            to_specific = str(to_specific).strip() or None
+        if to_specific is None:
+            to_specific = _default_specific_for_chain(to_chain)
+        from_token = body.get("fromToken")
+        to_token = body.get("toToken")
+        amount_human = body.get("amountHuman")
+        amount_usd = body.get("amountUsd")
+        reason = body.get("reason", "bridge")
+
+        if not from_token or not to_token:
+            return JSONResponse({"error": "fromToken dan toToken wajib diisi"}, status_code=400)
+
+        if amount_human is None:
+            amt = float(amount_usd or 0)
+            if amt <= 0:
+                return JSONResponse({"error": "amountUsd harus > 0 atau sertakan amountHuman"}, status_code=400)
+            price_from = _get_price(from_token, from_chain, from_specific)
+            if not price_from:
+                return JSONResponse({"error": "Harga fromToken tidak tersedia"}, status_code=500)
+            amount_human = amt / float(price_from)
+        amount_human = float(amount_human)
+
+        payload = {
+            "fromToken": from_token,
+            "toToken": to_token,
+            "amount": str(round(amount_human, 8)),
+            "reason": reason,
+            "slippageTolerance": "0.5",
+            "fromChain": from_chain,
+            "toChain": to_chain,
+        }
+        if from_specific:
+            payload["fromSpecificChain"] = from_specific
+        if to_specific:
+            payload["toSpecificChain"] = to_specific
+
+        upstream_status = None
+        upstream_text = None
+        try:
+            resp, upstream_status, upstream_text = _execute_trade_payload(payload)
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            body_txt = getattr(getattr(exc, "response", None), "text", None)
+            try:
+                _append_trade({
+                    "type": "bridge",
+                    "error": str(exc),
+                    "status": "error",
+                    "body": body,
+                    "payload": payload,
+                    "upstream_status": status if status is not None else upstream_status,
+                    "upstream_body": body_txt if body_txt is not None else upstream_text,
+                })
+            except Exception:
+                pass
+            return JSONResponse({
+                "error": str(exc),
+                "upstream_status": status if status is not None else upstream_status,
+                "upstream_body": body_txt if body_txt is not None else upstream_text,
+            }, status_code=status if isinstance(status, int) else 500)
+
+        try:
+            _append_trade({
+                "type": "bridge",
+                "status": "ok",
+                "fromChain": from_chain,
+                "toChain": to_chain,
+                "fromToken": from_token,
+                "toToken": to_token,
+                "amountHuman": amount_human,
+                "amountUsd": float(amount_usd) if amount_usd is not None else None,
+                "reason": reason,
+                "payload": payload,
+                "response": resp,
+            })
+            _ensure_token_known(from_token, None, from_chain, from_specific or "")
+            _ensure_token_known(to_token, None, to_chain, to_specific or "")
+            try:
+                price_from = _get_price(from_token, from_chain, from_specific)
+            except Exception:
+                price_from = None
+            cost_usd = float(amount_usd) if amount_usd is not None else (float(amount_human) * float(price_from or 0))
+            if cost_usd:
+                _ledger_sell(from_token, from_chain, from_specific or "", amount_from=float(amount_human), proceeds_usd=cost_usd, symbol=None)
+            try:
+                price_to = _get_price(to_token, to_chain, to_specific)
+            except Exception:
+                price_to = None
+            if cost_usd and price_to:
+                amount_to = cost_usd / float(price_to)
+                _ledger_buy(to_token, to_chain, to_specific or "", amount_to=amount_to, cost_usd=cost_usd, symbol=None)
+        except Exception:
+            pass
+        return JSONResponse(resp)
+    except Exception as e:
+        try:
+            _append_trade({
+                "type": "bridge",
+                "status": "error",
+                "error": str(e),
+                "body": body,
+            })
+        except Exception:
+            pass
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ---------- Auto Trade (scheduler, disabled by default) ----------
