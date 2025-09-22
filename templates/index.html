@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -522,3 +523,529 @@
     <script src="/static/app.js?v=4"></script>
   </body>
 </html>
+=======
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Recall Agent Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Bootstrap 5 -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link href="/static/style.css" rel="stylesheet" />
+  </head>
+  <body class="bg-light" style="background-color: #393e46 !important">
+    <nav
+      class="navbar fixed-top navbar-expand-lg bg-white"
+      style="background-color: #222831 !important"
+    >
+      <div class="container-fluid">
+        <a class="navbar-brand text-white ms-2" href="#"
+          ><img
+            src="https://raw.githubusercontent.com/SweetGrief29/foto/main/Tak%20berjudul103_20250904233531.png"
+            width="50"
+            style="margin-right: 15px"
+          />
+          P-nguin Agent</a
+        >
+        <span class="text-muted small ms-2">BASE: {{ base_url }}</span>
+      </div>
+    </nav>
+
+    <main class="container my-4" style="margin-top: 120px !important">
+      <div class="row g-4">
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Balances</h5>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="hideSmallBalances" checked data-threshold="{{ hide_small_default }}" />
+                    <label class="form-check-label small" for="hideSmallBalances">Hide &lt; ${{ '%.2f' % hide_small_default }}</label>
+                  </div>
+                  <button id="btnRefresh" class="btn btn-outline-primary btn-sm">
+                    Refresh
+                  </button>
+                </div>
+              </div>
+              <div class="mt-3 table-responsive">
+                <table class="table table-sm align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Chain</th>
+                      <th>Specific</th>
+                      <th class="text-end">Amount</th>
+                      <th class="text-end">Price</th>
+                      <th class="text-end">Value (USD)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="balancesBody"></tbody>
+                  <tfoot>
+                    <tr class="table-light">
+                      <th colspan="5" class="text-end">Total</th>
+                      <th class="text-end" id="totalCell">$0.00</th>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div
+                id="balancesAlert"
+                class="alert alert-warning d-none mb-0"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h5 class="card-title">Rebalance</h5>
+              <div class="row g-3 align-items-end">
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Chain</label>
+                  <select id="netChainReb" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Specific</label>
+                  <select id="netSpecificReb" class="form-select">
+                    <option value="eth">eth</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Target Token</label>
+                  <select id="rebTargetToken" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Cash Token</label>
+                  <select id="rebCashToken" class="form-select"></select>
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Target %</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value="10"
+                    class="form-control"
+                    id="targetPct"
+                  />
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Max trade (USD)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="500"
+                    class="form-control"
+                    id="maxTrade"
+                  />
+                </div>
+                <div class="col-4">
+                  <label class="form-label">USDC reserve (USD)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value="50"
+                    class="form-control"
+                    id="reserve"
+                  />
+                </div>
+                <div class="col-12 d-flex align-items-center gap-2">
+                  <button id="btnRebalance" class="btn btn-primary">
+                    Rebalance
+                  </button>
+                  <button id="btnAISuggest" class="btn btn-outline-secondary">
+                    AI Suggest
+                  </button>
+                  <div class="form-check ms-2">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      id="allowSell"
+                    />
+                    <label class="form-check-label" for="allowSell"
+                      >Allow sell</label
+                    >
+                  </div>
+                  <span id="aiStatus" class="text-muted small"></span>
+                </div>
+              </div>
+              <pre class="mt-3 small" id="rebOut"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-5">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h5 class="card-title">Manual Trade</h5>
+              <div class="row g-3 align-items-end">
+                <div class="col-6 col-md-3">
+                  <label class="form-label">From Chain</label>
+                  <select id="netChainMan" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">From Specific</label>
+                  <select id="netSpecificMan" class="form-select">
+                    <option value="eth">eth</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Chain</label>
+                  <select id="netChainManTo" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Specific</label>
+                  <select id="netSpecificManTo" class="form-select">
+                    <option value="eth">eth</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Side</label>
+                  <select id="side" class="form-select">
+                    <option value="buy">Buy</option>
+                    <option value="sell">Sell</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">From Token</label>
+                  <select id="manFromToken" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">To Token</label>
+                  <select id="manToToken" class="form-select"></select>
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Amount (USD)</label>
+                  <input
+                    id="amountUsd"
+                    type="number"
+                    value="10"
+                    step="0.01"
+                    min="0"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Reason</label>
+                  <input
+                    id="reason"
+                    type="text"
+                    value="manual trade"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-12">
+                  <button id="btnExecute" class="btn btn-success me-2">
+                    Execute
+                  </button>
+                  <button id="btnSwap" class="btn btn-outline-secondary">
+                    Swap
+                  </button>
+                </div>
+              </div>
+              <hr class="my-3" />
+              <h6 class="mb-1">Batch Trade</h6>
+              <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Side</label>
+                  <select id="batchSide" class="form-select">
+                    <option value="buy" selected>buy</option>
+                    <option value="sell">sell</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Total USD</label>
+                  <input id="batchTotalUsd" type="number" min="1" step="1" value="100" class="form-control" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Chunk USD</label>
+                  <input id="batchChunkUsd" type="number" min="0.01" step="0.01" value="1" class="form-control" />
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Reason</label>
+                  <input id="batchReason" type="text" value="batch trade" class="form-control" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <button id="btnBatchTrade" class="btn btn-primary w-100">Mulai Batch</button>
+                </div>
+              </div>
+              <pre class="mt-3 small" id="tradeOut"></pre>
+            </div>
+          </div>
+
+          <div class="card shadow-sm mt-4">
+            <div class="card-body">
+              <h5 class="card-title">Bridge Tokens</h5>
+              <div class="row g-3 align-items-end">
+                <div class="col-6 col-md-3">
+                  <label class="form-label">From Chain</label>
+                  <select id="bridgeFromChain" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">From Specific</label>
+                  <select id="bridgeFromSpecific" class="form-select">
+                    <option value="eth">eth</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">From Token</label>
+                  <select id="bridgeFromToken" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Amount (USD)</label>
+                  <input id="bridgeAmountUsd" type="number" min="0.01" step="0.01" value="10" class="form-control" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Chain</label>
+                  <select id="bridgeToChain" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Specific</label>
+                  <select id="bridgeToSpecific" class="form-select">
+                    <option value="eth">eth</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Token</label>
+                  <select id="bridgeToToken" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Reason</label>
+                  <input id="bridgeReason" type="text" value="bridge" class="form-control" />
+                </div>
+                <div class="col-12">
+                  <button id="btnBridge" type="button" class="btn btn-warning">Execute Bridge</button>
+                </div>
+              </div>
+              <pre class="mt-3 small" id="bridgeOut"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Manage Tokens</h5>
+                <button
+                  id="btnReloadTokens"
+                  class="btn btn-outline-secondary btn-sm"
+                >
+                  Reload
+                </button>
+              </div>
+              <div class="row g-3 align-items-end mt-1">
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Symbol</label>
+                  <input
+                    id="tokSymbol"
+                    type="text"
+                    placeholder="e.g. PEPE"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">Chain</label>
+                  <select id="tokChain" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="solana">solana</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Address</label>
+                  <input
+                    id="tokAddress"
+                    type="text"
+                    placeholder="0x... (EVM) atau base58 (Solana)"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">Specific</label>
+                  <select id="tokSpecific" class="form-select">
+                    <option value="eth">eth</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-1">
+                  <button id="btnAddToken" class="btn btn-success w-100">
+                    Add
+                  </button>
+                </div>
+                <div class="col-6 col-md-1">
+                  <button id="btnRemoveToken" class="btn btn-outline-danger">
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <div class="mt-3 small" id="tokensOut"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div
+                class="d-flex justify-content-between align-items-center mb-3"
+              >
+                <h5 class="card-title mb-0">Trade History</h5>
+                <div class="btn-group btn-group-sm">
+                  <button id="tradesPrev" class="btn btn-outline-secondary">
+                    Prev
+                  </button>
+                  <button
+                    id="tradesNext"
+                    class="btn btn-outline-secondary ms-1"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table
+                  id="tradeTable"
+                  class="table table-sm table-hover align-middle table-rounded mb-2"
+                >
+                  <thead class="table-light">
+                    <tr>
+                      <th>Time (UTC)</th>
+                      <th>Type</th>
+                      <th>Side</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th class="text-end">Amount</th>
+                      <th class="text-end">USD</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tradesBody"></tbody>
+                </table>
+              </div>
+
+              <div class="d-flex justify-content-end align-items-center gap-2">
+                <div id="tradesPageInfo" class="small text-muted">0–0 of 0</div>
+              </div>
+
+              <div id="tradesNote" class="small text-muted mt-2"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">PnL</h5>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="pnlLiveToggle" checked />
+                    <label class="form-check-label small" for="pnlLiveToggle">Live</label>
+                  </div>
+                  <input id="pnlLiveSec" type="number" min="5" step="5" value="15" class="form-control form-control-sm" style="width: 70px" />
+                  <button
+                    id="btnPnlRefresh"
+                    class="btn btn-outline-secondary btn-sm"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              <div class="row g-3 mt-1">
+                <div class="col-12 col-lg-6">
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                      <thead class="table-light">
+                        <tr>
+                          <th>Token</th>
+                          <th class="text-end">Amount</th>
+                          <th class="text-end">Avg Cost</th>
+                          <th class="text-end">Price</th>
+                          <th class="text-end">Value</th>
+                          <th class="text-end">Unrealized</th>
+                        </tr>
+                      </thead>
+                      <tbody id="pnlPositions"></tbody>
+                      <tfoot>
+                        <tr class="table-light">
+                          <th>Total</th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th class="text-end" id="pnlTotalValue">$0.00</th>
+                          <th class="text-end" id="pnlTotalUnreal">$0.00</th>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="col-12 col-lg-6">
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                      <thead class="table-light">
+                        <tr>
+                          <th>Time</th>
+                          <th>Token</th>
+                          <th class="text-end">Amount</th>
+                          <th class="text-end">Proceeds</th>
+                          <th class="text-end">Cost</th>
+                          <th class="text-end">PnL</th>
+                        </tr>
+                      </thead>
+                      <tbody id="pnlRealized"></tbody>
+                      <tfoot>
+                        <tr class="table-light">
+                          <th colspan="5" class="text-end">Realized Total</th>
+                          <th class="text-end" id="pnlTotalRealized">$0.00</th>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/app.js?v=4"></script>
+  </body>
+</html>
+>>>>>>> a51f7a7 (push)
