@@ -1150,6 +1150,40 @@ const CHAIN_SPECS = {
   svm: [],
 };
 
+const SYMBOL_ALIASES = {
+  USDC: ["USDC.E", "USDBC"],
+  "USDC.E": ["USDC", "USDBC"],
+  USDBC: ["USDC", "USDC.E"],
+};
+
+function symbolsEqual(a, b) {
+  const ax = String(a || "").toUpperCase();
+  const bx = String(b || "").toUpperCase();
+  if (!ax && !bx) return true;
+  if (ax === bx) return true;
+  if ((SYMBOL_ALIASES[ax] || []).includes(bx)) return true;
+  if ((SYMBOL_ALIASES[bx] || []).includes(ax)) return true;
+  return false;
+}
+
+const SYMBOL_PRIORITY = [
+  "USDBC",
+  "USDC",
+  "USDC.E",
+  "DAI",
+  "USDT",
+];
+
+function symbolRank(sym) {
+  const upper = String(sym || "").toUpperCase();
+  if (!upper) return SYMBOL_PRIORITY.length + 1;
+  for (let i = 0; i < SYMBOL_PRIORITY.length; i += 1) {
+    const pref = SYMBOL_PRIORITY[i];
+    if (symbolsEqual(upper, pref)) return i;
+  }
+  return SYMBOL_PRIORITY.length + 1;
+}
+
 // ===== Trade History Pagination =====
 let TRADES = []; // semua data trade dari server
 let tradesPage = 1; // halaman aktif
@@ -1159,12 +1193,20 @@ const TRADES_PER_PAGE = 10; // 10 baris per halaman
 // Helpers
 // =======================
 function setSpecificOptions(selectEl, chain) {
+  if (!selectEl) return "";
   const specs = CHAIN_SPECS[chain] || [];
   const cur = selectEl.value;
   selectEl.innerHTML = specs
     .map((s) => `<option value="${s}">${s}</option>`)
     .join("");
-  if (specs.includes(cur)) selectEl.value = cur;
+  let next = "";
+  if (specs.includes(cur)) {
+    next = cur;
+  } else if (specs.length > 0) {
+    next = specs[0];
+  }
+  selectEl.value = next;
+  return next;
 }
 
 function tokenOptionsFor(chain, specific) {
@@ -1174,6 +1216,11 @@ function tokenOptionsFor(chain, specific) {
     if (!sameChain) return false;
     if (!hasSpecifics || !specific) return true; // SVM or unspecified => ignore specific
     return String(t.specificChain || "") === String(specific || "");
+  });
+  list.sort((a, b) => {
+    const rankDiff = symbolRank(a.symbol) - symbolRank(b.symbol);
+    if (rankDiff !== 0) return rankDiff;
+    return String(a.symbol || "").localeCompare(String(b.symbol || ""), undefined, { sensitivity: "base" });
   });
   return list
     .map(
@@ -1200,43 +1247,8 @@ function symbolOf(addr) {
 }
 
 
-function getHideSmallElement() {
-  return document.getElementById("hideSmallBalances");
-}
-
-function baseHideThreshold() {
-  const el = getHideSmallElement();
-  return Number(el?.dataset.threshold || "1");
-}
-
-function currentMinUsd() {
-  const el = getHideSmallElement();
-  if (!el) return baseHideThreshold();
-  return el.checked ? baseHideThreshold() : 0;
-}
-
-function updateHideSmallLabel(minUsdValue) {
-  const el = getHideSmallElement();
-  const label = document.querySelector('label[for="hideSmallBalances"]');
-  if (!el || !label) return;
-  const stored = Number(el.dataset.threshold || baseHideThreshold());
-  let base = Number(minUsdValue != null ? minUsdValue : stored);
-  if (Number.isNaN(base) || base <= 0) {
-    base = stored;
-  }
-  if (!Number.isNaN(base) && base > 0) {
-    el.dataset.threshold = String(base);
-  }
-  if (el.checked) {
-    label.textContent = `Hide < $${base.toFixed(2)}`;
-  } else {
-    label.textContent = 'Show all';
-  }
-}
-
 function balancesEndpointUrl() {
-  const minUsd = currentMinUsd();
-  return `/api/balances?minUsd=${encodeURIComponent(minUsd)}`;
+  return "/api/balances";
 }
 // formatters
 const fmtUSD = (n) =>
@@ -1258,7 +1270,6 @@ async function loadBalances() {
     const res = await fetch(balancesEndpointUrl());
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    if (data.minUsd != null) updateHideSmallLabel(Number(data.minUsd));
 
     let total = 0;
     (data.balances || []).forEach((b) => {
@@ -1323,7 +1334,7 @@ async function loadTokens() {
         const t = (TOKENS || []).find((x) => {
           const sameChain = String(x.chain || "") === netChainReb.value;
           if (!sameChain) return false;
-          const symOk = String(x.symbol || "").toUpperCase() === String(sym || "").toUpperCase();
+          const symOk = symbolsEqual(x.symbol, sym);
           if (!symOk) return false;
           if (!hasSpecs || !netSpecReb.value) return true;
           return String(x.specificChain || "") === netSpecReb.value;
@@ -1356,8 +1367,7 @@ async function loadTokens() {
           (x) =>
             String(x.chain || "") === netChainMan.value &&
             String(x.specificChain || "") === netSpecMan.value &&
-            String(x.symbol || "").toUpperCase() ===
-              String(sym || "").toUpperCase()
+            symbolsEqual(x.symbol, sym)
         );
         return t ? t.address : "";
       };
@@ -1366,7 +1376,7 @@ async function loadTokens() {
         const t = (TOKENS || []).find((x) => {
           const sameChain = String(x.chain || "") === String(toChainVal || "");
           if (!sameChain) return false;
-          const symOk = String(x.symbol || "").toUpperCase() === String(sym || "").toUpperCase();
+          const symOk = symbolsEqual(x.symbol, sym);
           if (!symOk) return false;
           if (!hasSpecsTo || !toSpecVal) return true;
           return String(x.specificChain || "") === String(toSpecVal || "");
@@ -1394,38 +1404,101 @@ async function loadTokens() {
     const bridgeToToken = document.getElementById("bridgeToToken");
 
     const pickBridgeToken = (chainVal, specVal, sym) => {
-      return (TOKENS || []).find((x) => {
+      const list = (TOKENS || []).filter((x) => {
         if (String(x.chain || "") !== String(chainVal || "")) return false;
         if (specVal) {
           if (String(x.specificChain || "") !== String(specVal || "")) return false;
         }
-        return String(x.symbol || "").toUpperCase() === String(sym || "").toUpperCase();
+        return true;
       });
+      const upper = String(sym || "").toUpperCase();
+      const direct = list.find((x) => String(x.symbol || "").toUpperCase() === upper);
+      if (direct) return direct;
+      return list.find((x) => symbolsEqual(x.symbol, sym));
     };
 
     if (bridgeFromChain && bridgeFromSpec && bridgeFromToken) {
+      const prevValue = bridgeFromToken.value;
       const optsFromBridge = tokenOptionsFor(bridgeFromChain.value, bridgeFromSpec.value);
       bridgeFromToken.innerHTML = optsFromBridge;
-      const isFromSol = bridgeFromChain.value === "solana" || bridgeFromChain.value === "svm";
-      const defFrom = pickBridgeToken(bridgeFromChain.value, bridgeFromSpec.value, isFromSol ? "wSOL" : "USDC")
-        || pickBridgeToken(bridgeFromChain.value, bridgeFromSpec.value, "WETH");
-      if (defFrom?.address) bridgeFromToken.value = defFrom.address;
-      else if (!bridgeFromToken.value && bridgeFromToken.options.length > 0) {
-        bridgeFromToken.value = bridgeFromToken.options[0].value;
+      const optionValues = Array.from(bridgeFromToken.options || []).map((o) => o.value);
+      const specLower = String(bridgeFromSpec.value || "").toLowerCase();
+      const key = `${bridgeFromChain.value || ""}:${specLower}`;
+      const changedKey = bridgeFromToken.dataset.lastKey !== key;
+      bridgeFromToken.dataset.lastKey = key;
+      const preferredSymbols = (() => {
+        if (bridgeFromChain.value === "solana" || bridgeFromChain.value === "svm") {
+          return ["wSOL", "USDC", "USDBC"];
+        }
+        if (specLower === "base") {
+          return ["USDBC", "USDC", "USDC.E", "DAI", "USDT", "WETH"];
+        }
+        if (specLower === "optimism") {
+          return ["USDC", "USDC.E", "DAI", "USDT", "WETH"];
+        }
+        if (specLower === "arbitrum") {
+          return ["USDC", "USDC.E", "DAI", "USDT", "WETH"];
+        }
+        return ["USDC", "USDC.E", "DAI", "USDT", "WETH"];
+      })();
+      let nextValue = "";
+      if (!changedKey && prevValue && optionValues.includes(prevValue)) {
+        nextValue = prevValue;
+      } else {
+        for (const sym of preferredSymbols) {
+          const hit = pickBridgeToken(bridgeFromChain.value, bridgeFromSpec.value, sym);
+          if (hit?.address && optionValues.includes(hit.address)) {
+            nextValue = hit.address;
+            break;
+          }
+        }
+        if (!nextValue && optionValues.length > 0) {
+          nextValue = optionValues[0];
+        }
       }
+      bridgeFromToken.value = nextValue;
     }
 
     if (bridgeToChain && bridgeToSpec && bridgeToToken) {
+      const prevValue = bridgeToToken.value;
       const optsToBridge = tokenOptionsFor(bridgeToChain.value, bridgeToSpec.value || "");
       bridgeToToken.innerHTML = optsToBridge;
-      const isToSol = bridgeToChain.value === "solana" || bridgeToChain.value === "svm";
-      const defTo = pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, isToSol ? "USDC" : "WETH")
-        || pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, "USDC")
-        || pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, "wSOL");
-      if (defTo?.address) bridgeToToken.value = defTo.address;
-      else if (!bridgeToToken.value && bridgeToToken.options.length > 0) {
-        bridgeToToken.value = bridgeToToken.options[0].value;
+      const optionValues = Array.from(bridgeToToken.options || []).map((o) => o.value);
+      const specLower = String(bridgeToSpec.value || "").toLowerCase();
+      const key = `${bridgeToChain.value || ""}:${specLower}`;
+      const changedKey = bridgeToToken.dataset.lastKey !== key;
+      bridgeToToken.dataset.lastKey = key;
+      const preferredSymbols = (() => {
+        if (bridgeToChain.value === "solana" || bridgeToChain.value === "svm") {
+          return ["USDC", "wSOL"];
+        }
+        if (specLower === "base") {
+          return ["USDBC", "USDC", "USDC.E", "DAI", "USDT", "WETH"];
+        }
+        if (specLower === "optimism") {
+          return ["USDC", "USDC.E", "DAI", "USDT", "WETH"];
+        }
+        if (specLower === "arbitrum") {
+          return ["USDC", "USDC.E", "DAI", "USDT", "WETH"];
+        }
+        return ["USDC", "USDC.E", "DAI", "USDT", "WETH"];
+      })();
+      let nextValue = "";
+      if (!changedKey && prevValue && optionValues.includes(prevValue)) {
+        nextValue = prevValue;
+      } else {
+        for (const sym of preferredSymbols) {
+          const hit = pickBridgeToken(bridgeToChain.value, bridgeToSpec.value, sym);
+          if (hit?.address && optionValues.includes(hit.address)) {
+            nextValue = hit.address;
+            break;
+          }
+        }
+        if (!nextValue && optionValues.length > 0) {
+          nextValue = optionValues[0];
+        }
       }
+      bridgeToToken.value = nextValue;
     }
 
     if (out) out.textContent = `Loaded ${TOKENS.length} tokens.`;
@@ -2031,10 +2104,6 @@ async function checkAIStatus() {
 // Event listeners
 // =======================
 document.getElementById("btnRefresh")?.addEventListener("click", loadBalances);
-document.getElementById("hideSmallBalances")?.addEventListener("change", () => {
-  updateHideSmallLabel(currentMinUsd());
-  loadBalances();
-});
 document.getElementById("btnRebalance")?.addEventListener("click", rebalance);
 document.getElementById("btnAISuggest")?.addEventListener("click", aiSuggest);
 document.getElementById("btnExecute")?.addEventListener("click", manualTrade);
@@ -2269,7 +2338,6 @@ function initNetworkSelectors() {
 // Initial load
 // =======================
 initNetworkSelectors();
-updateHideSmallLabel();
 loadBalances();
 loadTokens();
 loadTrades();

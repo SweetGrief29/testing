@@ -738,7 +738,7 @@ def run_batch_sell(
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    load_dotenv(override=True)
     API_KEY = os.getenv("RECALL_API_KEY")
     BASE = os.getenv("RECALL_API_URL", "https://api.sandbox.competitions.recall.network")
     if not API_KEY:

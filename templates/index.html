@@ -563,11 +563,10 @@
               <div class="d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">Balances</h5>
                 <div class="d-flex align-items-center gap-2">
-                  <div class="form-check form-switch m-0">
-                    <input class="form-check-input" type="checkbox" id="hideSmallBalances" checked data-threshold="{{ hide_small_default }}" />
-                    <label class="form-check-label small" for="hideSmallBalances">Hide &lt; ${{ '%.2f' % hide_small_default }}</label>
-                  </div>
-                  <button id="btnRefresh" class="btn btn-outline-primary btn-sm">
+                  <button
+                    id="btnRefresh"
+                    class="btn btn-outline-primary btn-sm"
+                  >
                     Refresh
                   </button>
                 </div>
@@ -601,93 +600,136 @@
           </div>
         </div>
 
-        <div class="col-12 col-lg-7">
+        <div class="col-12 col-lg-6">
           <div class="card shadow-sm">
             <div class="card-body">
-              <h5 class="card-title">Rebalance</h5>
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Manage Tokens</h5>
+                <button
+                  id="btnReloadTokens"
+                  class="btn btn-outline-secondary btn-sm"
+                >
+                  Reload
+                </button>
+              </div>
+              <div class="row g-3 align-items-end mt-1">
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Symbol</label>
+                  <input
+                    id="tokSymbol"
+                    type="text"
+                    placeholder="e.g. PEPE"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">Chain</label>
+                  <select id="tokChain" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Address</label>
+                  <input
+                    id="tokAddress"
+                    type="text"
+                    placeholder="0x... (EVM) atau base58 (Solana)"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">Specific</label>
+                  <select id="tokSpecific" class="form-select">
+                    <option value="eth">eth</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <button id="btnAddToken" class="btn btn-success w-100">
+                    Add
+                  </button>
+                </div>
+                <div class="col-6 col-md-3">
+                  <button id="btnRemoveToken" class="btn btn-outline-danger">
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <div class="mt-3 small" id="tokensOut"></div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm mt-4">
+            <div class="card-body">
+              <h5 class="card-title">Bridge Tokens</h5>
               <div class="row g-3 align-items-end">
                 <div class="col-6 col-md-3">
-                  <label class="form-label">Chain</label>
-                  <select id="netChainReb" class="form-select">
+                  <label class="form-label">From Chain</label>
+                  <select id="bridgeFromChain" class="form-select">
                     <option value="evm" selected>evm</option>
-                    <option value="solana">solana</option>
                     <option value="svm">svm</option>
                   </select>
                 </div>
                 <div class="col-6 col-md-3">
-                  <label class="form-label">Specific</label>
-                  <select id="netSpecificReb" class="form-select">
+                  <label class="form-label">From Specific</label>
+                  <select id="bridgeFromSpecific" class="form-select">
                     <option value="eth">eth</option>
                   </select>
                 </div>
-                <div class="col-6 col-md-4">
-                  <label class="form-label">Target Token</label>
-                  <select id="rebTargetToken" class="form-select"></select>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">From Token</label>
+                  <select id="bridgeFromToken" class="form-select"></select>
                 </div>
-                <div class="col-6 col-md-4">
-                  <label class="form-label">Cash Token</label>
-                  <select id="rebCashToken" class="form-select"></select>
-                </div>
-                <div class="col-4">
-                  <label class="form-label">Target %</label>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Amount (USD)</label>
                   <input
+                    id="bridgeAmountUsd"
                     type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
+                    min="0.01"
+                    step="0.01"
                     value="10"
                     class="form-control"
-                    id="targetPct"
                   />
                 </div>
-                <div class="col-4">
-                  <label class="form-label">Max trade (USD)</label>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Chain</label>
+                  <select id="bridgeToChain" class="form-select">
+                    <option value="evm" selected>evm</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Specific</label>
+                  <select id="bridgeToSpecific" class="form-select">
+                    <option value="eth">eth</option>
+                    <option value="svm">svm</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">To Token</label>
+                  <select id="bridgeToToken" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Reason</label>
                   <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value="500"
+                    id="bridgeReason"
+                    type="text"
+                    value="bridge"
                     class="form-control"
-                    id="maxTrade"
                   />
                 </div>
-                <div class="col-4">
-                  <label class="form-label">USDC reserve (USD)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value="50"
-                    class="form-control"
-                    id="reserve"
-                  />
-                </div>
-                <div class="col-12 d-flex align-items-center gap-2">
-                  <button id="btnRebalance" class="btn btn-primary">
-                    Rebalance
+                <div class="col-12">
+                  <button id="btnBridge" type="button" class="btn btn-warning">
+                    Execute Bridge
                   </button>
-                  <button id="btnAISuggest" class="btn btn-outline-secondary">
-                    AI Suggest
-                  </button>
-                  <div class="form-check ms-2">
-                    <input
-                      class="form-check-input"
-                      type="checkbox"
-                      id="allowSell"
-                    />
-                    <label class="form-check-label" for="allowSell"
-                      >Allow sell</label
-                    >
-                  </div>
-                  <span id="aiStatus" class="text-muted small"></span>
                 </div>
               </div>
-              <pre class="mt-3 small" id="rebOut"></pre>
+              <pre class="mt-3 small" id="bridgeOut"></pre>
             </div>
           </div>
         </div>
 
-        <div class="col-12 col-lg-5">
+        <div class="col-12 col-lg-6">
           <div class="card shadow-sm">
             <div class="card-body">
               <h5 class="card-title">Manual Trade</h5>
@@ -696,7 +738,6 @@
                   <label class="form-label">From Chain</label>
                   <select id="netChainMan" class="form-select">
                     <option value="evm" selected>evm</option>
-                    <option value="solana">solana</option>
                     <option value="svm">svm</option>
                   </select>
                 </div>
@@ -710,7 +751,6 @@
                   <label class="form-label">To Chain</label>
                   <select id="netChainManTo" class="form-select">
                     <option value="evm" selected>evm</option>
-                    <option value="solana">solana</option>
                     <option value="svm">svm</option>
                   </select>
                 </div>
@@ -721,7 +761,7 @@
                     <option value="svm">svm</option>
                   </select>
                 </div>
-                
+
                 <div class="col-12 col-md-4">
                   <label class="form-label">Side</label>
                   <select id="side" class="form-select">
@@ -766,7 +806,7 @@
                   </button>
                 </div>
               </div>
-              <hr class="my-3" />
+              <hr class="my-3 mt-5" />
               <h6 class="mb-1">Batch Trade</h6>
               <div class="row g-3 align-items-end">
                 <div class="col-12 col-md-3">
@@ -778,139 +818,42 @@
                 </div>
                 <div class="col-12 col-md-3">
                   <label class="form-label">Total USD</label>
-                  <input id="batchTotalUsd" type="number" min="1" step="1" value="100" class="form-control" />
+                  <input
+                    id="batchTotalUsd"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="100"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-12 col-md-3">
                   <label class="form-label">Chunk USD</label>
-                  <input id="batchChunkUsd" type="number" min="0.01" step="0.01" value="1" class="form-control" />
+                  <input
+                    id="batchChunkUsd"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value="1"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-12 col-md-6">
                   <label class="form-label">Reason</label>
-                  <input id="batchReason" type="text" value="batch trade" class="form-control" />
+                  <input
+                    id="batchReason"
+                    type="text"
+                    value="batch trade"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-12 col-md-3">
-                  <button id="btnBatchTrade" class="btn btn-primary w-100">Mulai Batch</button>
+                  <button id="btnBatchTrade" class="btn btn-primary w-100">
+                    Mulai Batch
+                  </button>
                 </div>
               </div>
               <pre class="mt-3 small" id="tradeOut"></pre>
-            </div>
-          </div>
-
-          <div class="card shadow-sm mt-4">
-            <div class="card-body">
-              <h5 class="card-title">Bridge Tokens</h5>
-              <div class="row g-3 align-items-end">
-                <div class="col-6 col-md-3">
-                  <label class="form-label">From Chain</label>
-                  <select id="bridgeFromChain" class="form-select">
-                    <option value="evm" selected>evm</option>
-                    <option value="solana">solana</option>
-                    <option value="svm">svm</option>
-                  </select>
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">From Specific</label>
-                  <select id="bridgeFromSpecific" class="form-select">
-                    <option value="eth">eth</option>
-                  </select>
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">From Token</label>
-                  <select id="bridgeFromToken" class="form-select"></select>
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">Amount (USD)</label>
-                  <input id="bridgeAmountUsd" type="number" min="0.01" step="0.01" value="10" class="form-control" />
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">To Chain</label>
-                  <select id="bridgeToChain" class="form-select">
-                    <option value="evm" selected>evm</option>
-                    <option value="solana">solana</option>
-                    <option value="svm">svm</option>
-                  </select>
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">To Specific</label>
-                  <select id="bridgeToSpecific" class="form-select">
-                    <option value="eth">eth</option>
-                    <option value="svm">svm</option>
-                  </select>
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">To Token</label>
-                  <select id="bridgeToToken" class="form-select"></select>
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label">Reason</label>
-                  <input id="bridgeReason" type="text" value="bridge" class="form-control" />
-                </div>
-                <div class="col-12">
-                  <button id="btnBridge" type="button" class="btn btn-warning">Execute Bridge</button>
-                </div>
-              </div>
-              <pre class="mt-3 small" id="bridgeOut"></pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-12">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Manage Tokens</h5>
-                <button
-                  id="btnReloadTokens"
-                  class="btn btn-outline-secondary btn-sm"
-                >
-                  Reload
-                </button>
-              </div>
-              <div class="row g-3 align-items-end mt-1">
-                <div class="col-12 col-md-3">
-                  <label class="form-label">Symbol</label>
-                  <input
-                    id="tokSymbol"
-                    type="text"
-                    placeholder="e.g. PEPE"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-6 col-md-2">
-                  <label class="form-label">Chain</label>
-                  <select id="tokChain" class="form-select">
-                    <option value="evm" selected>evm</option>
-                    <option value="solana">solana</option>
-                    <option value="svm">svm</option>
-                  </select>
-                </div>
-                <div class="col-12 col-md-6">
-                  <label class="form-label">Address</label>
-                  <input
-                    id="tokAddress"
-                    type="text"
-                    placeholder="0x... (EVM) atau base58 (Solana)"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-6 col-md-2">
-                  <label class="form-label">Specific</label>
-                  <select id="tokSpecific" class="form-select">
-                    <option value="eth">eth</option>
-                  </select>
-                </div>
-                <div class="col-6 col-md-1">
-                  <button id="btnAddToken" class="btn btn-success w-100">
-                    Add
-                  </button>
-                </div>
-                <div class="col-6 col-md-1">
-                  <button id="btnRemoveToken" class="btn btn-outline-danger">
-                    Remove
-                  </button>
-                </div>
-              </div>
-              <div class="mt-3 small" id="tokensOut"></div>
             </div>
           </div>
         </div>
@@ -972,10 +915,25 @@
                 <h5 class="card-title mb-0">PnL</h5>
                 <div class="d-flex align-items-center gap-2">
                   <div class="form-check form-switch m-0">
-                    <input class="form-check-input" type="checkbox" id="pnlLiveToggle" checked />
-                    <label class="form-check-label small" for="pnlLiveToggle">Live</label>
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      id="pnlLiveToggle"
+                      checked
+                    />
+                    <label class="form-check-label small" for="pnlLiveToggle"
+                      >Live</label
+                    >
                   </div>
-                  <input id="pnlLiveSec" type="number" min="5" step="5" value="15" class="form-control form-control-sm" style="width: 70px" />
+                  <input
+                    id="pnlLiveSec"
+                    type="number"
+                    min="5"
+                    step="5"
+                    value="15"
+                    class="form-control form-control-sm"
+                    style="width: 70px"
+                  />
                   <button
                     id="btnPnlRefresh"
                     class="btn btn-outline-secondary btn-sm"

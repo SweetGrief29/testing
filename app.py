@@ -1297,7 +1297,7 @@ from datetime import datetime, timezone
 from datetime import datetime, timezone
 
 # === Load env ===
-load_dotenv()
+load_dotenv(override=True)
 API_KEY = os.getenv("RECALL_API_KEY")
 BASE    = os.getenv("RECALL_API_URL", "https://api.sandbox.competitions.recall.network")
 if not API_KEY:
@@ -1376,7 +1376,7 @@ def _get_price(token: str, chain: str = "evm", specific_chain: str | None = "eth
 
 
 # === FastAPI ===
-app = FastAPI(title="Recall Agent Dashboard")
+app = FastAPI(title="P-nguin Agent")
 BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str((BASE_DIR / "static").resolve())), name="static")
 templates = Jinja2Templates(directory=str((BASE_DIR / "templates").resolve()))
@@ -1406,13 +1406,13 @@ except Exception:
 @app.get("/")
 def home(request: Request):
     # Info dasar tidak mengandung secret (API key hanya di server)
-    ctx = {"request": request, "base_url": BASE, "hide_small_default": float(os.getenv("BALANCE_HIDE_USD_THRESHOLD", "1"))}
+    ctx = {"request": request, "base_url": BASE}
     return templates.TemplateResponse("index.html", ctx)
 
 
 # ---------- API Proxies ----------
 @app.get("/api/balances")
-def api_balances(minUsd: float | None = Query(None)):
+def api_balances():
     try:
         upstream_text = None
         upstream_status = None
@@ -1420,26 +1420,7 @@ def api_balances(minUsd: float | None = Query(None)):
         upstream_text = r.text
         upstream_status = r.status_code
         r.raise_for_status()
-        resp = r.json()
-        try:
-            if minUsd is None:
-                threshold = float(os.getenv("BALANCE_HIDE_USD_THRESHOLD", "1"))
-            else:
-                threshold = max(0.0, float(minUsd))
-            items = []
-            for it in resp.get("balances", []):
-                val = float(it.get("value", 0) or 0)
-                token_addr = str(it.get("tokenAddress", ""))
-                kind = str(it.get("kind", "")).lower()
-                is_token = bool(token_addr) or kind == "token"
-                if is_token and val < threshold:
-                    continue
-                items.append(it)
-            resp["balances"] = items
-            resp["minUsd"] = threshold
-        except Exception:
-            pass
-        return JSONResponse(resp)
+        return JSONResponse(r.json())
     except Exception as e:
         return JSONResponse({
             "error": str(e),
